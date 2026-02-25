@@ -10,19 +10,37 @@ const BASE_ALLOWED_ORIGINS = [
   "http://127.0.0.1:5173",
   "http://127.0.0.1:5174",
   "http://127.0.0.1:5175",
+  "https://rajchemreactor.online",
+  "https://www.rajchemreactor.online",
+  "http://rajchemreactor.online",
   "https://rajchemreactor.netlify.app",
   "https://www.rajchemreactor.netlify.app",
   "http://rajchemreactor.netlify.app",
   "https://edtechplatformfrontend.onrender.com",
 ];
 
-const normalizeOrigin = (value = "") => value.trim().replace(/\/+$/, "");
+const normalizeOrigin = (value = "") =>
+  String(value || "")
+    .trim()
+    .replace(/^['"]+|['"]+$/g, "")
+    .replace(/\/+$/, "");
+
+const toHostname = (value = "") => {
+  const normalized = normalizeOrigin(value);
+  if (!normalized) return "";
+  try {
+    const withProtocol = /^https?:\/\//i.test(normalized) ? normalized : `https://${normalized}`;
+    return new URL(withProtocol).hostname.toLowerCase();
+  } catch {
+    return normalized.replace(/^https?:\/\//i, "").split("/")[0].toLowerCase();
+  }
+};
 
 export const getAllowedOrigins = () => {
   const origins = new Set(BASE_ALLOWED_ORIGINS.map(normalizeOrigin));
 
   if (process.env.FRONTEND_URL) {
-    process.env.FRONTEND_URL.split(",")
+    process.env.FRONTEND_URL.split(/[,;\n]/)
       .map(normalizeOrigin)
       .filter(Boolean)
       .forEach((origin) => origins.add(origin));
@@ -34,11 +52,17 @@ export const getAllowedOrigins = () => {
 export const isAllowedOrigin = (origin, allowedOrigins = getAllowedOrigins()) => {
   if (!origin) return false;
   const normalizedOrigin = normalizeOrigin(origin);
+  const originHost = toHostname(normalizedOrigin);
+
   return allowedOrigins.some((allowedOrigin) => {
     const normalizedAllowed = normalizeOrigin(allowedOrigin);
+    const allowedHost = toHostname(normalizedAllowed);
+    if (!allowedHost) return false;
+
     return (
       normalizedOrigin === normalizedAllowed ||
-      normalizedOrigin.endsWith(normalizedAllowed.replace(/^https?:\/\//, ""))
+      originHost === allowedHost ||
+      originHost.endsWith(`.${allowedHost}`)
     );
   });
 };

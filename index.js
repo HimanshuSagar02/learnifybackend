@@ -17,7 +17,9 @@ import {
   hppProtection,
   requestSizeLimit,
   securityLogger,
-  requestOriginGuard
+  requestOriginGuard,
+  getAllowedOrigins,
+  isAllowedOrigin
 } from "./middlewares/security.js"
 
 // Routes
@@ -79,32 +81,7 @@ app.use(cors({
         }
         
         // Build allowed origins list
-        const allowedOrigins = [];
-        
-        // Add FRONTEND_URL if set
-        if (process.env.FRONTEND_URL) {
-            // Support comma-separated list of URLs
-            const urls = process.env.FRONTEND_URL.split(',').map(url => url.trim());
-            allowedOrigins.push(...urls);
-        }
-        
-        // Always allow localhost for development
-        allowedOrigins.push(
-            'http://localhost:5173',
-            'http://localhost:5174',
-            'http://localhost:5175',
-            'http://127.0.0.1:5173',
-            'http://127.0.0.1:5174',
-            'http://127.0.0.1:5175'
-        );
-        
-        // Always allow Netlify domain (production frontend)
-        allowedOrigins.push(
-            'https://rajchemreactor.netlify.app',
-            'https://www.rajchemreactor.netlify.app',
-            'http://rajchemreactor.netlify.app', // HTTP version if exists
-            'https://edtechplatformfrontend.onrender.com'
-        );
+        const allowedOrigins = getAllowedOrigins();
         
         // In development, allow all origins
         if (process.env.NODE_ENV !== 'production') {
@@ -116,14 +93,7 @@ app.use(cors({
         debugLog(`[CORS] Production mode - checking origin: ${origin}`);
         debugLog(`[CORS] Allowed origins:`, allowedOrigins);
         
-        // Check if origin matches any allowed origin (exact match or subdomain)
-        const isAllowed = allowedOrigins.some(allowed => {
-            // Exact match
-            if (allowed === origin) return true;
-            // Subdomain match (e.g., www.rajchemreactor.netlify.app matches rajchemreactor.netlify.app)
-            if (origin && origin.endsWith(allowed.replace(/^https?:\/\//, ''))) return true;
-            return false;
-        });
+        const isAllowed = isAllowedOrigin(origin, allowedOrigins);
         
         if (allowedOrigins.length === 0 || isAllowed) {
             debugLog(`[CORS] ✅ Origin allowed: ${origin}`);
@@ -154,24 +124,14 @@ app.options(/.*/, (req, res) => {
     const origin = req.headers.origin;
     debugLog(`[CORS] Preflight request from: ${origin}`);
     
-    // Build allowed origins (same as main CORS config)
-    const allowedOrigins = [];
-    if (process.env.FRONTEND_URL) {
-        const urls = process.env.FRONTEND_URL.split(',').map(url => url.trim());
-        allowedOrigins.push(...urls);
-    }
-    allowedOrigins.push(
-        'http://localhost:5173',
-        'http://localhost:5174',
-        'http://localhost:5175',
-        'https://rajchemreactor.netlify.app',
-        'https://www.rajchemreactor.netlify.app',
-        'http://rajchemreactor.netlify.app',
-        'https://edtechplatformfrontend.onrender.com'
-    );
-    
-    // Allow origin if in list or development mode
-    if (process.env.NODE_ENV !== 'production' || !origin || allowedOrigins.includes(origin)) {
+    const allowedOrigins = getAllowedOrigins();
+    const preflightAllowed =
+      process.env.NODE_ENV !== "production" ||
+      !origin ||
+      allowedOrigins.length === 0 ||
+      isAllowedOrigin(origin, allowedOrigins);
+
+    if (preflightAllowed) {
         res.setHeader('Access-Control-Allow-Origin', origin || '*');
         res.setHeader('Access-Control-Allow-Credentials', 'true');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
