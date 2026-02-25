@@ -56,9 +56,9 @@ export const createLiveClass = async (req, res) => {
       maxParticipants,
     } = req.body;
 
-    if (!title || !courseId || !scheduledDate) {
+    if (!title || !scheduledDate) {
       return res.status(400).json({
-        message: "Title, courseId, and scheduledDate are required",
+        message: "Title and scheduledDate are required",
       });
     }
 
@@ -84,18 +84,29 @@ export const createLiveClass = async (req, res) => {
     
     console.log(`[CreateLiveClass] User authorized - Role: ${user.role}, Name: ${user.name}`);
 
-    const course = await Course.findById(courseId);
-    if (!course) return res.status(404).json({ message: "Course not found" });
+    const normalizedCourseId =
+      typeof courseId === "string" ? courseId.trim() : courseId;
+    const hasCourseId =
+      !!normalizedCourseId &&
+      normalizedCourseId !== "null" &&
+      normalizedCourseId !== "undefined" &&
+      normalizedCourseId !== "NA" &&
+      normalizedCourseId !== "na";
 
-    // Verify educator owns the course (unless admin)
-    if (user.role === "educator" && course.creator.toString() !== req.userId.toString()) {
-      return res.status(403).json({ message: "You can only create live classes for your own courses" });
+    if (hasCourseId) {
+      const course = await Course.findById(normalizedCourseId);
+      if (!course) return res.status(404).json({ message: "Course not found" });
+
+      // Verify educator owns the course (unless admin)
+      if (user.role === "educator" && course.creator.toString() !== req.userId.toString()) {
+        return res.status(403).json({ message: "You can only create live classes for your own courses" });
+      }
     }
 
     const liveClass = await LiveClass.create({
       title,
       description,
-      courseId,
+      courseId: hasCourseId ? normalizedCourseId : null,
       educatorId: req.userId,
       platformType: platformType || "portal",
       meetingLink: meetingLink || "",
@@ -161,14 +172,17 @@ export const getMyLiveClasses = async (req, res) => {
 
     console.log(`[GetMyLiveClasses] User enrolled in ${courseIds.length} courses`);
 
-    if (courseIds.length === 0) {
-      console.log(`[GetMyLiveClasses] No enrolled courses, returning empty array`);
-      return res.status(200).json([]);
+    const visibilityFilters = [
+      { courseId: null },
+      { courseId: { $exists: false } },
+    ];
+    if (courseIds.length > 0) {
+      visibilityFilters.unshift({ courseId: { $in: courseIds } });
     }
 
     const liveClasses = await LiveClass.find({
-      courseId: { $in: courseIds },
       status: { $in: ["scheduled", "live"] },
+      $or: visibilityFilters,
     })
       .populate("courseId", "title thumbnail")
       .populate("educatorId", "name email photoUrl")
@@ -180,7 +194,9 @@ export const getMyLiveClasses = async (req, res) => {
     // Ensure all live classes have proper structure
     const formattedLiveClasses = (liveClasses || []).map(liveClass => ({
       ...liveClass,
-      courseId: liveClass.courseId || { _id: liveClass.courseId, title: "Unknown Course" },
+      courseId: liveClass.courseId
+        ? liveClass.courseId
+        : { _id: null, title: "General Session (No course)" },
       educatorId: liveClass.educatorId || { _id: liveClass.educatorId, name: "Unknown Educator" }
     }));
     
@@ -222,7 +238,9 @@ export const getEducatorLiveClasses = async (req, res) => {
     // Ensure all live classes have proper structure
     const formattedLiveClasses = (liveClasses || []).map(liveClass => ({
       ...liveClass,
-      courseId: liveClass.courseId || { _id: liveClass.courseId, title: "Unknown Course" },
+      courseId: liveClass.courseId
+        ? liveClass.courseId
+        : { _id: null, title: "General Session (No course)" },
       enrolledStudents: liveClass.enrolledStudents || []
     }));
     
@@ -248,16 +266,19 @@ export const joinLiveClass = async (req, res) => {
     const user = await User.findById(req.userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Check if student is enrolled in the course
-    const course = await Course.findById(liveClass.courseId);
-    if (!course) return res.status(404).json({ message: "Course not found" });
+    const isGeneralSession = !liveClass.courseId;
+    if (!isGeneralSession) {
+      // Check if student is enrolled in the course
+      const course = await Course.findById(liveClass.courseId);
+      if (!course) return res.status(404).json({ message: "Course not found" });
 
-    const isEnrolled = course.enrolledStudents.some(
-      (id) => id.toString() === req.userId.toString()
-    );
+      const isEnrolled = course.enrolledStudents.some(
+        (id) => id.toString() === req.userId.toString()
+      );
 
-    if (!isEnrolled && user.role !== "admin") {
-      return res.status(403).json({ message: "You must be enrolled in the course to join" });
+      if (!isEnrolled && user.role !== "admin") {
+        return res.status(403).json({ message: "You must be enrolled in the course to join" });
+      }
     }
 
     // Check if already joined
@@ -718,14 +739,15 @@ export const getLiveKitToken = async (req, res) => {
     
     // For students, check enrollment
     const courseIdString = liveClass.courseId?._id?.toString() || liveClass.courseId?.toString();
-    const isEnrolled = courseIdString && user.enrolledCourses?.some(
+    const isGeneralSession = !courseIdString;
+    const isEnrolled = !isGeneralSession && user.enrolledCourses?.some(
       (courseId) => {
         const enrolledCourseId = typeof courseId === "string" ? courseId : (courseId?._id?.toString() || courseId?.toString());
         return enrolledCourseId === courseIdString;
       }
     );
 
-    if (!isEnrolled) {
+    if (!isGeneralSession && !isEnrolled) {
       return res.status(403).json({ 
         message: "You must be enrolled in the course to join this live class" 
       });

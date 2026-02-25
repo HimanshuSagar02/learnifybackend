@@ -12,12 +12,23 @@ const razorpayInstance = new razorpay({
 export const createOrder = async (req, res) => {
   try {
     const { courseId, userId } = req.body;
+    if (!courseId || !userId) {
+      return res.status(400).json({ message: "courseId and userId are required" });
+    }
 
     const course = await Course.findById(courseId);
     if (!course) return res.status(404).json({ message: "Course not found" });
 
+    const coursePrice = Number(course.price);
+    if (!Number.isFinite(coursePrice) || coursePrice <= 0) {
+      return res.status(400).json({
+        message: "This course is free. Please enroll directly without payment.",
+        code: "FREE_COURSE"
+      });
+    }
+
     const options = {
-      amount: course.price * 100, // in paisa
+      amount: Math.round(coursePrice * 100), // in paisa
       currency: 'INR',
       receipt: `${courseId}-${Date.now()}`,
     };
@@ -29,7 +40,7 @@ export const createOrder = async (req, res) => {
       course: courseId,
       student: userId,
       razorpay_order_id: razorpayOrder.id,
-      amount: course.price,
+      amount: coursePrice,
       status: "pending"
     });
 

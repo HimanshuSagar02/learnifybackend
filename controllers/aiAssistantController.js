@@ -18,6 +18,42 @@ const getGenAI = () => {
   return new GoogleGenAI({ apiKey });
 };
 
+const extractModelText = (result) => {
+  const directText = typeof result?.text === "string" ? result.text.trim() : "";
+  if (directText) {
+    return directText;
+  }
+
+  const candidateText = (result?.candidates || [])
+    .flatMap((candidate) => candidate?.content?.parts || [])
+    .map((part) => (typeof part?.text === "string" ? part.text : ""))
+    .join("\n")
+    .trim();
+
+  if (candidateText) {
+    return candidateText;
+  }
+
+  const blockReason = result?.promptFeedback?.blockReason;
+  if (blockReason) {
+    throw new Error(`AI response blocked (${blockReason})`);
+  }
+
+  throw new Error("AI returned an empty response");
+};
+
+const extractJsonSlice = (rawText, openToken, closeToken) => {
+  const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
+  const start = cleaned.indexOf(openToken);
+  const end = cleaned.lastIndexOf(closeToken);
+
+  if (start === -1 || end === -1 || end < start) {
+    throw new Error("Invalid response format");
+  }
+
+  return cleaned.slice(start, end + 1);
+};
+
 // 1. AI Intelligent Tutor - ChatGPT-like conversation
 export const aiTutorChat = async (req, res) => {
   try {
@@ -41,7 +77,16 @@ ${topic ? `Current topic context: ${topic}` : ""}
 
 Be conversational, helpful, and educational. Keep responses concise but informative.`;
 
-    const conversationContext = conversationHistory
+    const normalizedHistory = Array.isArray(conversationHistory)
+      ? conversationHistory.filter(
+          (msg) =>
+            msg &&
+            (msg.role === "user" || msg.role === "assistant") &&
+            typeof msg.content === "string"
+        )
+      : [];
+
+    const conversationContext = normalizedHistory
       .slice(-10) // Keep last 10 messages for context
       .map((msg) => `${msg.role === "user" ? "Student" : "Tutor"}: ${msg.content}`)
       .join("\n");
@@ -53,12 +98,12 @@ Be conversational, helpful, and educational. Keep responses concise but informat
       contents: fullPrompt,
     });
 
-    const response = result.text.trim();
+    const response = extractModelText(result);
 
     return res.status(200).json({
       response,
       conversationHistory: [
-        ...conversationHistory,
+        ...normalizedHistory,
         { role: "user", content: message },
         { role: "assistant", content: response },
       ],
@@ -96,15 +141,8 @@ No markdown, no code fences. JSON array only.`;
       contents: prompt,
     });
 
-    let raw = result.text.trim();
-    raw = raw.replace(/```json|```/g, "").trim();
-    const start = raw.indexOf("[");
-    const end = raw.lastIndexOf("]");
-    if (start === -1 || end === -1) {
-      throw new Error("Invalid response format");
-    }
-
-    const questions = JSON.parse(raw.slice(start, end + 1));
+    const raw = extractModelText(result);
+    const questions = JSON.parse(extractJsonSlice(raw, "[", "]"));
 
     return res.status(200).json({ questions });
   } catch (error) {
@@ -143,15 +181,8 @@ No markdown, no code fences. JSON array only.`;
       contents: prompt,
     });
 
-    let raw = result.text.trim();
-    raw = raw.replace(/```json|```/g, "").trim();
-    const start = raw.indexOf("[");
-    const end = raw.lastIndexOf("]");
-    if (start === -1 || end === -1) {
-      throw new Error("Invalid response format");
-    }
-
-    const quiz = JSON.parse(raw.slice(start, end + 1));
+    const raw = extractModelText(result);
+    const quiz = JSON.parse(extractJsonSlice(raw, "[", "]"));
 
     return res.status(200).json({ quiz });
   } catch (error) {
@@ -224,7 +255,7 @@ ${content}`;
       contents: prompt,
     });
 
-    let response = result.text.trim();
+    let response = extractModelText(result);
 
     // Try to parse as JSON if it looks like JSON
     if (summaryType === "mindmap" || summaryType === "formula") {
@@ -293,15 +324,8 @@ Return a JSON object:
       contents: prompt,
     });
 
-    let raw = result.text.trim();
-    raw = raw.replace(/```json|```/g, "").trim();
-    const start = raw.indexOf("{");
-    const end = raw.lastIndexOf("}");
-    if (start === -1 || end === -1) {
-      throw new Error("Invalid response format");
-    }
-
-    const analysis = JSON.parse(raw.slice(start, end + 1));
+    const raw = extractModelText(result);
+    const analysis = JSON.parse(extractJsonSlice(raw, "{", "}"));
 
     return res.status(200).json(analysis);
   } catch (error) {

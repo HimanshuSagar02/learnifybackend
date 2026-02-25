@@ -4,7 +4,8 @@ const liveClassSchema = new mongoose.Schema(
   {
     title: { type: String, required: true },
     description: { type: String },
-    courseId: { type: mongoose.Schema.Types.ObjectId, ref: "Course", required: true },
+    // null courseId means a general session visible to all students.
+    courseId: { type: mongoose.Schema.Types.ObjectId, ref: "Course", default: null },
     educatorId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     platformType: {
       type: String,

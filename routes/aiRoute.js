@@ -1,9 +1,37 @@
 import express from "express";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
+import { searchWithAi } from "../controllers/aiController.js";
 dotenv.config();
 
 const router = express.Router();
+
+const extractModelText = (result) => {
+  const directText = typeof result?.text === "string" ? result.text.trim() : "";
+  if (directText) {
+    return directText;
+  }
+
+  const candidateText = (result?.candidates || [])
+    .flatMap((candidate) => candidate?.content?.parts || [])
+    .map((part) => (typeof part?.text === "string" ? part.text : ""))
+    .join("\n")
+    .trim();
+
+  if (candidateText) {
+    return candidateText;
+  }
+
+  const blockReason = result?.promptFeedback?.blockReason;
+  if (blockReason) {
+    throw new Error(`Response blocked by model safety filters (${blockReason})`);
+  }
+
+  throw new Error("Model returned an empty response");
+};
+
+// ================= AI SEARCH ROUTE ================= //
+router.post("/search", searchWithAi);
 
 // ================= AI QUIZ ROUTE ================= //
 router.post("/generate-quiz", async (req, res) => {
@@ -38,7 +66,7 @@ No markdown, no code fences, no commentary. JSON only.
       contents: prompt,
     });
 
-    let raw = result.text.trim();
+    let raw = extractModelText(result);
     raw = raw.replace(/```json|```/g, "").trim();
 
     // Extract the JSON array if the model added any stray text
