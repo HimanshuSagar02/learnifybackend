@@ -1,5 +1,30 @@
-import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
+import User from "../models/userModel.js";
+import { verifyToken as verifyJwtToken } from "../configs/token.js";
+
+const isDevelopment = process.env.NODE_ENV !== "production";
+const debugLog = (...args) => {
+  if (isDevelopment) {
+    console.log(...args);
+  }
+};
+
+const clearAuthCookie = (res) => {
+  const isProduction = process.env.NODE_ENV === "production";
+  const cookieOptions = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "None" : "Lax",
+    path: "/",
+  };
+
+  if (isProduction && process.env.COOKIE_DOMAIN) {
+    cookieOptions.domain = process.env.COOKIE_DOMAIN;
+  }
+
+  res.clearCookie("token", cookieOptions);
+  res.clearCookie("token", { path: "/" });
+};
 
 const isAuth = async (req, res, next) => {
   try {
@@ -12,7 +37,7 @@ const isAuth = async (req, res, next) => {
     // Check database connection
     if (mongoose.connection.readyState !== 1) {
       console.error(`[isAuth] Database not connected. State: ${mongoose.connection.readyState}`);
-      console.log("[isAuth] Attempting to reconnect...");
+      debugLog("[isAuth] Attempting to reconnect...");
       
       // Try to reconnect if disconnected
       if (mongoose.connection.readyState === 0) {
@@ -45,42 +70,54 @@ const isAuth = async (req, res, next) => {
       const authHeader = req.headers.authorization;
       if (authHeader.startsWith('Bearer ')) {
         token = authHeader.substring(7);
-        console.log(`[isAuth] Token found in Authorization header`);
+        debugLog(`[isAuth] Token found in Authorization header`);
       }
     }
     
     if (!token) {
-      console.log(`[isAuth] No token found in cookies for ${req.method} ${req.path}`);
-      console.log(`[isAuth] Cookies received:`, Object.keys(req.cookies || {}));
-      console.log(`[isAuth] Request headers:`, {
-        origin: req.headers.origin,
-        referer: req.headers.referer,
-        cookie: req.headers.cookie ? 'present' : 'missing'
-      });
+      debugLog(`[isAuth] No token found in cookies for ${req.method} ${req.path}`);
+      debugLog(`[isAuth] Cookies received:`, Object.keys(req.cookies || {}));
       return res.status(401).json({ message: "Authentication required. Please login." });
     }
     
-    let verifyToken;
+    let decodedToken;
     try {
-      verifyToken = jwt.verify(token, process.env.JWT_SECRET);
-      console.log(`[isAuth] Token verified for user: ${verifyToken.userId}`);
+      decodedToken = verifyJwtToken(token);
+      debugLog(`[isAuth] Token verified for user: ${decodedToken.userId}`);
     } catch (jwtError) {
-      console.error(`[isAuth] Token verification failed:`, jwtError.name);
-      if (jwtError.name === "TokenExpiredError") {
+      debugLog(`[isAuth] Token verification failed:`, jwtError.message);
+      if (jwtError.message === "Token has expired") {
         return res.status(401).json({ message: "Token expired. Please login again." });
       }
-      if (jwtError.name === "JsonWebTokenError") {
+      if (jwtError.message === "Invalid token") {
         return res.status(401).json({ message: "Invalid token. Please login again." });
       }
       throw jwtError;
     }
     
-    if (!verifyToken || !verifyToken.userId) {
+    if (!decodedToken || !decodedToken.userId) {
       console.error(`[isAuth] Invalid token format`);
       return res.status(401).json({ message: "Invalid token format" });
     }
+
+    const user = await User.findById(decodedToken.userId).select("_id role status");
+    if (!user) {
+      clearAuthCookie(res);
+      return res.status(401).json({ message: "User not found. Please login again." });
+    }
+
+    if (user.status !== "approved") {
+      clearAuthCookie(res);
+      return res.status(403).json({
+        message:
+          user.status === "pending"
+            ? "Account pending approval by admin"
+            : "Account rejected by admin",
+      });
+    }
   
-    req.userId = verifyToken.userId;
+    req.userId = decodedToken.userId;
+    req.userRole = user.role;
     next();
   } catch (error) {
     console.error("[isAuth] Middleware error:", error);

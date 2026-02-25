@@ -3,6 +3,46 @@ import rateLimit from "express-rate-limit";
 // import mongoSanitize from "express-mongo-sanitize"; // Removed - using custom implementation
 import hpp from "hpp";
 
+const BASE_ALLOWED_ORIGINS = [
+  "http://localhost:5173",
+  "http://localhost:5174",
+  "http://localhost:5175",
+  "http://127.0.0.1:5173",
+  "http://127.0.0.1:5174",
+  "http://127.0.0.1:5175",
+  "https://rajchemreactor.netlify.app",
+  "https://www.rajchemreactor.netlify.app",
+  "http://rajchemreactor.netlify.app",
+  "https://edtechplatformfrontend.onrender.com",
+];
+
+const normalizeOrigin = (value = "") => value.trim().replace(/\/+$/, "");
+
+export const getAllowedOrigins = () => {
+  const origins = new Set(BASE_ALLOWED_ORIGINS.map(normalizeOrigin));
+
+  if (process.env.FRONTEND_URL) {
+    process.env.FRONTEND_URL.split(",")
+      .map(normalizeOrigin)
+      .filter(Boolean)
+      .forEach((origin) => origins.add(origin));
+  }
+
+  return Array.from(origins);
+};
+
+export const isAllowedOrigin = (origin, allowedOrigins = getAllowedOrigins()) => {
+  if (!origin) return false;
+  const normalizedOrigin = normalizeOrigin(origin);
+  return allowedOrigins.some((allowedOrigin) => {
+    const normalizedAllowed = normalizeOrigin(allowedOrigin);
+    return (
+      normalizedOrigin === normalizedAllowed ||
+      normalizedOrigin.endsWith(normalizedAllowed.replace(/^https?:\/\//, ""))
+    );
+  });
+};
+
 /* =====================================================
     SECURITY HEADERS (Helmet)
 =====================================================*/
@@ -315,6 +355,48 @@ export const securityLogger = (req, res, next) => {
   if (req.params) checkSuspicious(req.params, 'params');
   
   next();
+};
+
+/* =====================================================
+    REQUEST ORIGIN GUARD (CSRF STYLE PROTECTION)
+=====================================================*/
+export const requestOriginGuard = (req, res, next) => {
+  // Only protect state-changing requests
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+    return next();
+  }
+
+  // Keep development convenient
+  if (process.env.NODE_ENV !== "production") {
+    return next();
+  }
+
+  const allowedOrigins = getAllowedOrigins();
+  const originHeader = req.headers.origin;
+  const refererHeader = req.headers.referer;
+
+  let requestOrigin = originHeader;
+  if (!requestOrigin && refererHeader) {
+    try {
+      requestOrigin = new URL(refererHeader).origin;
+    } catch {
+      requestOrigin = "";
+    }
+  }
+
+  // Allow non-browser/server-to-server requests that don't send Origin/Referer.
+  if (!requestOrigin) {
+    return next();
+  }
+
+  if (!isAllowedOrigin(requestOrigin, allowedOrigins)) {
+    console.warn(`[Security] Blocked request with invalid origin: ${requestOrigin} (${req.method} ${req.originalUrl})`);
+    return res.status(403).json({
+      error: "Forbidden request origin",
+    });
+  }
+
+  return next();
 };
 
 /* =====================================================

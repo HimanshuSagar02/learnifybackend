@@ -38,9 +38,8 @@ const orderSchema = new mongoose.Schema(
       type: Date
     },
     receiptId: {
-      type: String,
-      sparse: true
-      // Note: unique index is created below, not here to avoid duplicate index warning
+      type: String
+      // Note: unique+sparse index is created below; avoid inline sparse to prevent duplicate index declaration.
     },
     status: {
       type: String,

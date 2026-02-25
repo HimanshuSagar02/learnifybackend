@@ -7,12 +7,21 @@ import mongoose from "mongoose"
 
 import sendMail from "../configs/Mail.js"
 
+const isDevelopment = process.env.NODE_ENV !== "production";
+const debugLog = (...args) => {
+    if (isDevelopment) console.log(...args);
+};
+const debugError = (...args) => {
+    if (isDevelopment) console.error(...args);
+};
+
 
 export const signUp=async (req,res)=>{
  
     try {
 
         let {name,email,password,role,class:studentClass,subject}= req.body
+        const normalizedEmail = email?.toLowerCase().trim();
         
         // Prevent educator/teacher signup - only students can sign up
         if(role && role !== "student"){
@@ -24,11 +33,11 @@ export const signUp=async (req,res)=>{
         // Force student role
         role = "student"
         
-        let existUser= await User.findOne({email})
+        let existUser= await User.findOne({email: normalizedEmail})
         if(existUser){
             return res.status(400).json({message:"email already exist"})
         }
-        if(!validator.isEmail(email)){
+        if(!validator.isEmail(normalizedEmail || "")){
             return res.status(400).json({message:"Please enter valid Email"})
         }
         // Enhanced password validation
@@ -53,7 +62,7 @@ export const signUp=async (req,res)=>{
         let hashPassword = await bcrypt.hash(password,10)
         let user = await User.create({
             name ,
-            email ,
+            email: normalizedEmail ,
             password:hashPassword ,
             role: "student", // Always student
             class: studentClass,
@@ -95,66 +104,54 @@ export const login=async(req,res)=>{
         // Normalize email (lowercase, trim)
         email = email.toLowerCase().trim()
         
-        console.log(`[Login] Attempting login for email: ${email}`);
-        console.log(`[Login] Database connection state: ${mongoose.connection.readyState} (1=connected)`);
+        debugLog(`[Login] Attempting login for email: ${email}`);
+        debugLog(`[Login] Database connection state: ${mongoose.connection.readyState} (1=connected)`);
         
-        // Try multiple query methods to find user (case-insensitive)
-        // IMPORTANT: Don't use .lean() because we need to save the user later
+        // Find user with normalized email. Keep regex fallback for legacy records.
         let user = null;
-        
+
         // Method 1: Exact match (lowercase)
         user = await User.findOne({email: email});
-        console.log(`[Login] Query method 1 (exact lowercase): ${user ? 'Found' : 'Not found'}`);
+        debugLog(`[Login] Query method 1 (exact lowercase): ${user ? 'Found' : 'Not found'}`);
         
         // Method 2: Case-insensitive regex if first method fails
         if (!user) {
             user = await User.findOne({email: { $regex: new RegExp(`^${email}$`, 'i') }});
-            console.log(`[Login] Query method 2 (case-insensitive regex): ${user ? 'Found' : 'Not found'}`);
-        }
-        
-        // Method 3: Try with any case variations
-        if (!user) {
-            // Get all users and check manually (fallback)
-            const allUsers = await User.find({}).select('email').lean();
-            console.log(`[Login] Total users in database: ${allUsers.length}`);
-            const matchingUser = allUsers.find(u => u.email && u.email.toLowerCase() === email);
-            if (matchingUser) {
-                // Query again WITHOUT .lean() to get Mongoose document
-                user = await User.findOne({email: matchingUser.email});
-                console.log(`[Login] Query method 3 (manual match): Found user with email: ${matchingUser.email}`);
-            }
+            debugLog(`[Login] Query method 2 (case-insensitive regex): ${user ? 'Found' : 'Not found'}`);
         }
         
         if(!user){
-            console.log(`[Login] User not found after all query methods: ${email}`);
+            debugLog(`[Login] User not found after all query methods: ${email}`);
             // Try to get sample emails for debugging
-            try {
+            if (isDevelopment) {
+                try {
                 const sampleUsers = await User.find({}).limit(3).select('email').lean();
-                console.log(`[Login] Sample emails in database:`, sampleUsers.map(u => u.email));
-            } catch (e) {
-                console.error(`[Login] Error getting sample users:`, e);
+                debugLog(`[Login] Sample emails in database:`, sampleUsers.map(u => u.email));
+                } catch (e) {
+                    debugError(`[Login] Error getting sample users:`, e);
+                }
             }
             return res.status(400).json({message:"User does not exist"})
         }
         
-        console.log(`[Login] User found - ID: ${user._id}, Email: ${user.email}, Status: ${user.status}, Role: ${user.role}`);
-        console.log(`[Login] User has password: ${!!(user.password && user.password.trim())}`);
-        console.log(`[Login] User is Mongoose document: ${user instanceof mongoose.Document}`);
+        debugLog(`[Login] User found - ID: ${user._id}, Email: ${user.email}, Status: ${user.status}, Role: ${user.role}`);
+        debugLog(`[Login] User has password: ${!!(user.password && user.password.trim())}`);
+        debugLog(`[Login] User is Mongoose document: ${user instanceof mongoose.Document}`);
         
         // Check account status
         if(user.status === "pending"){
-            console.log(`[Login] Account pending approval: ${email}`);
+            debugLog(`[Login] Account pending approval: ${email}`);
             return res.status(403).json({message:"Account pending approval by admin"})
         }
         if(user.status === "rejected"){
-            console.log(`[Login] Account rejected: ${email}`);
+            debugLog(`[Login] Account rejected: ${email}`);
             return res.status(403).json({message:"Account rejected by admin"})
         }
         
         // Check if user has a password
         if(!user.password || user.password.trim() === ''){
-            console.log(`[Login] User has no password set: ${email}`);
-            console.log(`[Login] User password field:`, user.password ? "exists but empty" : "null/undefined");
+            debugLog(`[Login] User has no password set: ${email}`);
+            debugLog(`[Login] User password field:`, user.password ? "exists but empty" : "null/undefined");
             return res.status(400).json({
                 message:"This account does not have a password set. Please use 'Forgot Password' to set a password, or contact admin.",
                 needsPasswordReset: true
@@ -162,16 +159,14 @@ export const login=async(req,res)=>{
         }
         
         // Verify password
-        console.log(`[Login] Comparing password for: ${email}`);
-        console.log(`[Login] Password hash length: ${user.password.length}`);
-        console.log(`[Login] Password hash preview: ${user.password.substring(0, 20)}...`);
+        debugLog(`[Login] Comparing password for: ${email}`);
         
         let isMatch = false;
         try {
             isMatch = await bcrypt.compare(password, user.password);
-            console.log(`[Login] Password comparison result: ${isMatch}`);
+            debugLog(`[Login] Password comparison result: ${isMatch}`);
         } catch (compareError) {
-            console.error(`[Login] Password comparison error:`, compareError);
+            debugError(`[Login] Password comparison error:`, compareError);
             return res.status(500).json({
                 message:"Error verifying password. Please try again.",
                 error: process.env.NODE_ENV === 'development' ? compareError.message : undefined
@@ -179,7 +174,7 @@ export const login=async(req,res)=>{
         }
         
         if(!isMatch){
-            console.log(`[Login] Incorrect password for: ${email}`);
+            debugLog(`[Login] Incorrect password for: ${email}`);
             return res.status(400).json({message:"Incorrect password"})
         }
         
@@ -187,9 +182,9 @@ export const login=async(req,res)=>{
         try {
             user.lastLoginAt = new Date();
             await user.save();
-            console.log(`[Login] Last login time updated successfully`);
+            debugLog(`[Login] Last login time updated successfully`);
         } catch (saveError) {
-            console.error(`[Login] Error saving last login time:`, saveError);
+            debugError(`[Login] Error saving last login time:`, saveError);
             // Don't fail login if save fails, just log the error
         }
         
@@ -197,9 +192,9 @@ export const login=async(req,res)=>{
         let token;
         try {
             token = await genToken(user._id);
-            console.log(`[Login] Token generated successfully for: ${email}`);
+            debugLog(`[Login] Token generated successfully for: ${email}`);
         } catch (tokenError) {
-            console.error(`[Login] Token generation failed:`, tokenError);
+            debugError(`[Login] Token generation failed:`, tokenError);
             return res.status(500).json({
                 message: "Failed to generate authentication token",
                 error: process.env.NODE_ENV === 'development' ? tokenError.message : undefined
@@ -223,24 +218,24 @@ export const login=async(req,res)=>{
         
         // Set cookie
         res.cookie("token", token, cookieOptions);
-        console.log(`[Login] Cookie set - secure: ${cookieOptions.secure}, sameSite: ${cookieOptions.sameSite}, path: ${cookieOptions.path}`);
+        debugLog(`[Login] Cookie set - secure: ${cookieOptions.secure}, sameSite: ${cookieOptions.sameSite}, path: ${cookieOptions.path}`);
         
         // Return user without password
         const userResponse = user.toObject();
         delete userResponse.password;
         
-        console.log(`[Login] Login successful for: ${email}, Role: ${user.role}, UserID: ${user._id}`);
+        debugLog(`[Login] Login successful for: ${email}, Role: ${user.role}, UserID: ${user._id}`);
         return res.status(200).json(userResponse)
 
     } catch (error) {
-        console.error("[Login] Login error:", error);
-        console.error("[Login] Error stack:", error.stack);
-        console.error("[Login] Error details:", {
-            message: error.message,
-            name: error.name,
+        console.error("[Login] Login error:", error?.message || error);
+        debugError("[Login] Error stack:", error?.stack);
+        debugError("[Login] Error details:", {
+            message: error?.message,
+            name: error?.name,
             email: req.body?.email,
-            code: error.code,
-            errno: error.errno
+            code: error?.code,
+            errno: error?.errno
         });
         
         // More specific error messages
@@ -270,7 +265,29 @@ export const login=async(req,res)=>{
 
 export const logOut = async(req,res)=>{
     try {
-        await res.clearCookie("token")
+        const isProduction = process.env.NODE_ENV === "production";
+        const cookieOptions = {
+            httpOnly: true,
+            secure: isProduction,
+            sameSite: isProduction ? "None" : "Lax",
+            path: "/",
+        };
+
+        if (isProduction && process.env.COOKIE_DOMAIN) {
+            cookieOptions.domain = process.env.COOKIE_DOMAIN;
+        }
+
+        // Clear with full options (most reliable for cross-site cookies)
+        res.clearCookie("token", cookieOptions);
+        // Fallback clear for legacy/default-path cookies
+        res.clearCookie("token", { path: "/" });
+        // Explicitly expire cookie as extra safeguard
+        res.cookie("token", "", {
+            ...cookieOptions,
+            maxAge: 0,
+            expires: new Date(0),
+        });
+
         return res.status(200).json({message:"logOut Successfully"})
     } catch (error) {
         return res.status(500).json({message:`logout Error ${error}`})
@@ -281,8 +298,9 @@ export const logOut = async(req,res)=>{
 export const googleSignup = async (req,res) => {
     try {
         const {name , email , role, photoUrl, class: studentClass, subject} = req.body
+        const normalizedEmail = email?.toLowerCase().trim();
         
-        if (!email) {
+        if (!normalizedEmail) {
             return res.status(400).json({message:"Email is required"})
         }
         
@@ -293,21 +311,18 @@ export const googleSignup = async (req,res) => {
             })
         }
         
-        // Force student role
-        const userRole = "student"
-        
         // Validate class for students (mandatory)
         if(!studentClass){
             return res.status(400).json({message:"Class/Grade is mandatory for students. Please select 9th, 10th, 11th, 12th, or NEET Dropper"})
         }
         
-        let user = await User.findOne({email})
+        let user = await User.findOne({email: normalizedEmail})
         
         if(!user){
             // New user - always create as student
             user = await User.create({
                 name: name || "User",
-                email,
+                email: normalizedEmail,
                 role: "student", // Always student
                 photoUrl: photoUrl || "",
                 class: studentClass,

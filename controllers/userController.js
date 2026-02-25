@@ -3,7 +3,24 @@ import User from "../models/userModel.js";
 import Course from "../models/courseModel.js";
 import Grade from "../models/gradeModel.js";
 import Attendance from "../models/attendanceModel.js";
-import jwt from "jsonwebtoken";
+import { verifyToken as verifyJwtToken } from "../configs/token.js";
+
+const clearAuthCookie = (res) => {
+  const isProduction = process.env.NODE_ENV === "production";
+  const cookieOptions = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? "None" : "Lax",
+    path: "/",
+  };
+
+  if (isProduction && process.env.COOKIE_DOMAIN) {
+    cookieOptions.domain = process.env.COOKIE_DOMAIN;
+  }
+
+  res.clearCookie("token", cookieOptions);
+  res.clearCookie("token", { path: "/" });
+};
 
 /* ========================= Get Current User ========================= */
 export const getCurrentUser = async (req, res) => {
@@ -22,7 +39,7 @@ export const getCurrentUser = async (req, res) => {
       }
 
       try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const decoded = verifyJwtToken(token);
         userId = decoded?.userId;
       } catch {
         return res.status(200).json({ authenticated: false, user: null });
@@ -38,6 +55,13 @@ export const getCurrentUser = async (req, res) => {
 
     if (!user) {
       console.log(`[GetCurrentUser] User not found: ${userId}`);
+      clearAuthCookie(res);
+      return res.status(200).json({ authenticated: false, user: null });
+    }
+
+    if (user.status !== "approved") {
+      console.log(`[GetCurrentUser] User inactive (${user.status}): ${user.email}`);
+      clearAuthCookie(res);
       return res.status(200).json({ authenticated: false, user: null });
     }
 

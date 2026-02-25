@@ -16,7 +16,8 @@ import {
   xssProtection,
   hppProtection,
   requestSizeLimit,
-  securityLogger
+  securityLogger,
+  requestOriginGuard
 } from "./middlewares/security.js"
 
 // Routes
@@ -49,11 +50,20 @@ dotenv.config({ path: "./.env" });
 
 const app = express();
 const port = process.env.PORT || 8000   // fallback if env missing
+const isProduction = process.env.NODE_ENV === "production";
+const debugLog = (...args) => {
+  if (!isProduction) {
+    console.log(...args);
+  }
+};
+
+app.disable("x-powered-by");
+app.set("etag", "strong");
 
 // =====================================================
 // CORS CONFIGURATION (Must be First)
 // =====================================================
-console.log("CORS Configuration:", {
+debugLog("CORS Configuration:", {
     NODE_ENV: process.env.NODE_ENV || "development",
     FRONTEND_URL: process.env.FRONTEND_URL || "Not set",
     CORS_MODE: "Allowing all origins"
@@ -64,7 +74,7 @@ app.use(cors({
     origin: function (origin, callback) {
         // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) {
-            console.log('[CORS] No origin header - allowing request');
+            debugLog('[CORS] No origin header - allowing request');
             return callback(null, true);
         }
         
@@ -92,18 +102,19 @@ app.use(cors({
         allowedOrigins.push(
             'https://rajchemreactor.netlify.app',
             'https://www.rajchemreactor.netlify.app',
-            'http://rajchemreactor.netlify.app' // HTTP version if exists
+            'http://rajchemreactor.netlify.app', // HTTP version if exists
+            'https://edtechplatformfrontend.onrender.com'
         );
         
         // In development, allow all origins
         if (process.env.NODE_ENV !== 'production') {
-            console.log(`[CORS] Development mode - allowing origin: ${origin}`);
+            debugLog(`[CORS] Development mode - allowing origin: ${origin}`);
             return callback(null, true);
         }
         
         // In production, check against whitelist
-        console.log(`[CORS] Production mode - checking origin: ${origin}`);
-        console.log(`[CORS] Allowed origins:`, allowedOrigins);
+        debugLog(`[CORS] Production mode - checking origin: ${origin}`);
+        debugLog(`[CORS] Allowed origins:`, allowedOrigins);
         
         // Check if origin matches any allowed origin (exact match or subdomain)
         const isAllowed = allowedOrigins.some(allowed => {
@@ -115,14 +126,14 @@ app.use(cors({
         });
         
         if (allowedOrigins.length === 0 || isAllowed) {
-            console.log(`[CORS] ✅ Origin allowed: ${origin}`);
+            debugLog(`[CORS] ✅ Origin allowed: ${origin}`);
             callback(null, true);
         } else {
             console.error(`[CORS] ❌ Origin blocked: ${origin}`);
-            console.error(`[CORS] Allowed origins:`, allowedOrigins);
+            debugLog(`[CORS] Allowed origins:`, allowedOrigins);
             // TEMPORARY: Allow anyway if FRONTEND_URL not set (for deployment testing)
             if (!process.env.FRONTEND_URL) {
-                console.warn(`[CORS] ⚠️ FRONTEND_URL not set - allowing origin anyway (temporary)`);
+                debugLog(`[CORS] ⚠️ FRONTEND_URL not set - allowing origin anyway (temporary)`);
                 callback(null, true);
             } else {
                 callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
@@ -141,7 +152,7 @@ app.use(cors({
 // Use regex pattern instead of wildcard for Express 5.x compatibility
 app.options(/.*/, (req, res) => {
     const origin = req.headers.origin;
-    console.log(`[CORS] Preflight request from: ${origin}`);
+    debugLog(`[CORS] Preflight request from: ${origin}`);
     
     // Build allowed origins (same as main CORS config)
     const allowedOrigins = [];
@@ -155,7 +166,8 @@ app.options(/.*/, (req, res) => {
         'http://localhost:5175',
         'https://rajchemreactor.netlify.app',
         'https://www.rajchemreactor.netlify.app',
-        'http://rajchemreactor.netlify.app'
+        'http://rajchemreactor.netlify.app',
+        'https://edtechplatformfrontend.onrender.com'
     );
     
     // Allow origin if in list or development mode
@@ -165,7 +177,7 @@ app.options(/.*/, (req, res) => {
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, Cookie');
         res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours
-        console.log(`[CORS] ✅ Preflight allowed for: ${origin}`);
+        debugLog(`[CORS] ✅ Preflight allowed for: ${origin}`);
         return res.status(204).send();
     } else {
         console.error(`[CORS] ❌ Preflight blocked for: ${origin}`);
@@ -248,6 +260,9 @@ app.use((req, res, next) => {
   }
 });
 
+// CSRF-style protection: validate Origin/Referer for state-changing browser requests
+app.use(requestOriginGuard);
+
 // General API Rate Limiting
 app.use('/api', apiLimiter);
 
@@ -264,18 +279,20 @@ app.use("/api/progress", progressRoutes)
 app.use("/api/cert", certificateRoutes); // certificate route connected
 // Admin routes - Register with detailed logging
 app.use("/api/admin", (req, res, next) => {
-  console.log(`[AdminRoute] Incoming request: ${req.method} ${req.originalUrl}`);
-  console.log(`[AdminRoute] Request path: ${req.path}, Base URL: ${req.baseUrl}`);
+  debugLog(`[AdminRoute] Incoming request: ${req.method} ${req.originalUrl}`);
+  debugLog(`[AdminRoute] Request path: ${req.path}, Base URL: ${req.baseUrl}`);
   next();
 }, adminRoute);
-console.log("[Index] Admin routes registered at /api/admin");
+debugLog("[Index] Admin routes registered at /api/admin");
 app.use("/api/sharednotes", courseNoteRoute);
 app.use("/api/attendance", attendanceRoute);
 app.use("/api/notes", noteRoute);
 app.use("/api/assignments", assignmentRoute);
 app.use("/api/notifications", notificationRoute);
 app.use("/api/setup", setupRoute); // One-time setup routes (no auth required)
-app.use("/api/test", testRoute); // Test routes
+if (process.env.NODE_ENV !== "production") {
+  app.use("/api/test", testRoute); // Test routes (development only)
+}
 app.use("/api/liveclass", liveClassRoute); // Live classes
 app.use("/api/grades", gradeRoute); // Grades/Marks
 app.use("/api/doubts", doubtRoute); // Doubts/Questions
