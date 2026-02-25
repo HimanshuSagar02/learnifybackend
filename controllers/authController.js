@@ -389,7 +389,9 @@ export const sendOtp = async (req,res) => {
         
         if(!user){
             console.log(`[SendOTP] User not found: ${normalizedEmail}`);
-            return res.status(404).json({message:"User not found with this email address"})
+            return res.status(200).json({
+                message: "If an account exists for this email, OTP has been sent."
+            })
         }
         
         console.log(`[SendOTP] User found: ${user.email}, Generating OTP...`);
