@@ -42,6 +42,7 @@ import gradeRoute from "./routes/gradeRoute.js";
 import doubtRoute from "./routes/doubtRoute.js";
 import aiAssistantRoute from "./routes/aiAssistantRoute.js";
 import feedbackRoute from "./routes/feedbackRoute.js";
+import marketingRoute from "./routes/marketingRoute.js";
 
 dotenv.config({ path: "./.env" }); 
 
@@ -278,6 +279,7 @@ app.use("/api/liveclass", liveClassRoute); // Live classes
 app.use("/api/grades", gradeRoute); // Grades/Marks
 app.use("/api/doubts", doubtRoute); // Doubts/Questions
 app.use("/api/feedback", feedbackRoute); // Feedback System
+app.use("/api/marketing", marketingRoute); // Marketing offers and demo booking
 
 // Test Route
 app.get("/", (req,res)=>{

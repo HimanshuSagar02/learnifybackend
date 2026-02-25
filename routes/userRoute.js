@@ -16,8 +16,8 @@ import {
 
 let userRouter = express.Router();
 
-// Get logged in user
-userRouter.get("/currentuser", isAuth, getCurrentUser);
+// Session-aware current user check (returns null when not logged in)
+userRouter.get("/currentuser", getCurrentUser);
 
 // Update profile
 userRouter.post("/updateprofile", isAuth, upload.single("photoUrl"), UpdateProfile);

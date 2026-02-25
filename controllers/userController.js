@@ -3,17 +3,42 @@ import User from "../models/userModel.js";
 import Course from "../models/courseModel.js";
 import Grade from "../models/gradeModel.js";
 import Attendance from "../models/attendanceModel.js";
+import jwt from "jsonwebtoken";
 
 /* ========================= Get Current User ========================= */
 export const getCurrentUser = async (req, res) => {
   try {
-    console.log(`[GetCurrentUser] Fetching user: ${req.userId}`);
-    const user = await User.findById(req.userId)
-      .select("-password");
+    let userId = req.userId;
+
+    if (!userId) {
+      const tokenFromCookie = req.cookies?.token;
+      const authHeader = req.headers?.authorization || "";
+      const tokenFromHeader =
+        authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
+      const token = tokenFromCookie || tokenFromHeader;
+
+      if (!token || !process.env.JWT_SECRET) {
+        return res.status(200).json({ authenticated: false, user: null });
+      }
+
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        userId = decoded?.userId;
+      } catch {
+        return res.status(200).json({ authenticated: false, user: null });
+      }
+    }
+
+    if (!userId) {
+      return res.status(200).json({ authenticated: false, user: null });
+    }
+
+    console.log(`[GetCurrentUser] Fetching user: ${userId}`);
+    const user = await User.findById(userId).select("-password");
 
     if (!user) {
-      console.log(`[GetCurrentUser] User not found: ${req.userId}`);
-      return res.status(404).json({ message: "User not found" });
+      console.log(`[GetCurrentUser] User not found: ${userId}`);
+      return res.status(200).json({ authenticated: false, user: null });
     }
 
     console.log(`[GetCurrentUser] User found: ${user.email}, Role: ${user.role}`);
