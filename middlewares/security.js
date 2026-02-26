@@ -73,18 +73,34 @@ export const isAllowedOrigin = (origin, allowedOrigins = getAllowedOrigins()) =>
 /* =====================================================
     SECURITY HEADERS (Helmet)
 =====================================================*/
+const allowUnsafeEval = process.env.ALLOW_UNSAFE_EVAL === "true";
+
 export const securityHeaders = helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'"],
+      scriptSrc: [
+        "'self'",
+        "https://checkout.razorpay.com",
+        "https://*.razorpay.com",
+        "https://apis.google.com",
+        "https://accounts.google.com",
+        "https://www.gstatic.com",
+        ...(allowUnsafeEval ? ["'unsafe-eval'"] : []),
+      ],
       imgSrc: ["'self'", "data:", "https:"],
       connectSrc: ["'self'", "http://localhost:*", "https://*"],
       fontSrc: ["'self'"],
       objectSrc: ["'none'"],
       mediaSrc: ["'self'"],
-      frameSrc: ["'none'"],
+      frameSrc: [
+        "'self'",
+        "https://checkout.razorpay.com",
+        "https://*.razorpay.com",
+        "https://accounts.google.com",
+        "https://*.google.com",
+      ],
     },
   },
   crossOriginEmbedderPolicy: false, // Allow external resources

@@ -22,9 +22,16 @@ const clearAuthCookie = (res) => {
   res.clearCookie("token", { path: "/" });
 };
 
+const setNoCacheHeaders = (res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+};
+
 /* ========================= Get Current User ========================= */
 export const getCurrentUser = async (req, res) => {
   try {
+    setNoCacheHeaders(res);
     let userId = req.userId;
 
     if (!userId) {

@@ -265,12 +265,32 @@ app.get("/", (req,res)=>{
     res.send("Server Running Successfully ✔")
 })
 
+// Handle malformed JSON payloads early so clients get a clear 400 response.
+app.use((err, req, res, next) => {
+  const isJsonParseError =
+    err?.type === "entity.parse.failed" ||
+    (err instanceof SyntaxError && err?.status === 400 && "body" in err);
+
+  if (!isJsonParseError) {
+    return next(err);
+  }
+
+  if (process.env.NODE_ENV !== "production") {
+    console.warn("[Request] Invalid JSON payload:", err?.body);
+  }
+
+  return res.status(400).json({
+    message: "Invalid JSON payload",
+    hint: "Send request body as valid JSON (Content-Type: application/json)",
+  });
+});
+
 // Error handling middleware (should be after all routes)
 app.use((err, req, res, next) => {
   console.error("❌ Error:", err);
-  res.status(500).json({ 
-    message: "Internal server error", 
-    error: process.env.NODE_ENV === "development" ? err.message : "Something went wrong" 
+  res.status(500).json({
+    message: "Internal server error",
+    error: process.env.NODE_ENV === "development" ? err.message : "Something went wrong",
   });
 });
 
