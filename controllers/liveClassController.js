@@ -3,6 +3,9 @@ import Course from "../models/courseModel.js";
 import User from "../models/userModel.js";
 import { generateLiveKitToken, getLiveKitURL } from "../configs/livekit.js";
 
+const PORTAL_PLATFORM_TYPES = new Set(["portal", "other"]);
+const EXTERNAL_PLATFORM_TYPES = new Set(["zoom", "google-meet"]);
+
 // Test LiveKit credentials (admin only)
 export const testLiveKitCredentials = async (req, res) => {
   try {
@@ -47,10 +50,12 @@ export const createLiveClass = async (req, res) => {
       title,
       description,
       courseId,
+      deliveryMode,
       platformType,
       meetingLink,
       meetingId,
       meetingPassword,
+      offlineDetails,
       scheduledDate,
       duration,
       maxParticipants,
@@ -62,8 +67,20 @@ export const createLiveClass = async (req, res) => {
       });
     }
 
+    const normalizedDeliveryMode =
+      deliveryMode === "offline"
+        ? "offline"
+        : deliveryMode === "hybrid"
+          ? "hybrid"
+          : "online";
+    const normalizedPlatformType =
+      normalizedDeliveryMode === "offline"
+        ? "offline"
+        : platformType || "portal";
+    const isExternalPlatform = EXTERNAL_PLATFORM_TYPES.has(normalizedPlatformType);
+
     // Validate platform-specific requirements
-    if (platformType === "zoom" || platformType === "google-meet") {
+    if (isExternalPlatform) {
       if (!meetingLink) {
         return res.status(400).json({
           message: "Meeting link is required for Zoom/Google Meet classes",
@@ -108,10 +125,27 @@ export const createLiveClass = async (req, res) => {
       description,
       courseId: hasCourseId ? normalizedCourseId : null,
       educatorId: req.userId,
-      platformType: platformType || "portal",
-      meetingLink: meetingLink || "",
-      meetingId: meetingId || "",
-      meetingPassword: meetingPassword || "",
+      deliveryMode: normalizedDeliveryMode,
+      platformType: normalizedPlatformType,
+      meetingLink: isExternalPlatform ? meetingLink || "" : "",
+      meetingId: isExternalPlatform ? meetingId || "" : "",
+      meetingPassword: isExternalPlatform ? meetingPassword || "" : "",
+      offlineDetails:
+        normalizedDeliveryMode === "offline" || normalizedDeliveryMode === "hybrid"
+          ? {
+              centerName: offlineDetails?.centerName || "",
+              classroom: offlineDetails?.classroom || "",
+              address: offlineDetails?.address || "",
+              landmark: offlineDetails?.landmark || "",
+              notes: offlineDetails?.notes || "",
+            }
+          : {
+              centerName: "",
+              classroom: "",
+              address: "",
+              landmark: "",
+              notes: "",
+            },
       scheduledDate: new Date(scheduledDate),
       duration: duration || 60,
       maxParticipants: maxParticipants || 100,
@@ -363,8 +397,8 @@ export const updateLiveClassStatus = async (req, res) => {
       }
       liveClass.status = status;
       
-      // Generate LiveKit room name when status changes to "live" for portal platform
-      if (status === "live" && liveClass.platformType === "portal" && !liveClass.liveKitRoomName) {
+      // Generate LiveKit room name when status changes to "live" for portal-like platforms.
+      if (status === "live" && PORTAL_PLATFORM_TYPES.has(liveClass.platformType) && !liveClass.liveKitRoomName) {
         // Create unique room name: liveclass-{liveClassId} (sanitized for LiveKit)
         const roomId = liveClass._id.toString().replace(/[^a-zA-Z0-9_-]/g, '-');
         liveClass.liveKitRoomName = `liveclass-${roomId}`;
@@ -674,8 +708,8 @@ export const getLiveKitToken = async (req, res) => {
       });
     }
 
-    // Only portal platform uses LiveKit
-    if (liveClass.platformType !== "portal") {
+    // Only portal-like platforms use LiveKit.
+    if (!PORTAL_PLATFORM_TYPES.has(liveClass.platformType)) {
       return res.status(400).json({ 
         message: "This live class uses an external platform. Please use the provided meeting link." 
       });

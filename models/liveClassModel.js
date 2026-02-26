@@ -7,14 +7,26 @@ const liveClassSchema = new mongoose.Schema(
     // null courseId means a general session visible to all students.
     courseId: { type: mongoose.Schema.Types.ObjectId, ref: "Course", default: null },
     educatorId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    deliveryMode: {
+      type: String,
+      enum: ["online", "hybrid", "offline"],
+      default: "online",
+    },
     platformType: {
       type: String,
-      enum: ["portal", "zoom", "google-meet"],
+      enum: ["portal", "other", "zoom", "google-meet", "offline"],
       default: "portal",
     },
     meetingLink: { type: String, default: "" }, // Required for zoom/google-meet, optional for portal
     meetingId: { type: String }, // Optional - for Zoom/Google Meet
     meetingPassword: { type: String }, // Optional - for Zoom/Google Meet
+    offlineDetails: {
+      centerName: { type: String, default: "" },
+      classroom: { type: String, default: "" },
+      address: { type: String, default: "" },
+      landmark: { type: String, default: "" },
+      notes: { type: String, default: "" },
+    },
     liveKitRoomName: { type: String }, // LiveKit room name for portal platform
     scheduledDate: { type: Date, required: true },
     duration: { type: Number, default: 60 }, // Duration in minutes
