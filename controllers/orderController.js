@@ -59,6 +59,7 @@ export const createOrder = async (req, res) => {
 export const verifyPayment = async (req, res) => {
   try {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature, courseId, userId } = req.body;
+    const normalizedUserId = userId?.toString?.() || String(userId || "");
     
     console.log(`[Order] Verifying payment for order: ${razorpay_order_id}`);
     
@@ -100,7 +101,8 @@ export const verifyPayment = async (req, res) => {
       if (!course) return res.status(404).json({ message: "Course not found" });
 
       // Prevent enrolling in own course
-      if (course.creator.toString() === userId.toString()) {
+      const creatorId = course.creator?.toString?.();
+      if (creatorId && creatorId === normalizedUserId) {
         order.status = "failed";
         order.failureReason = "Cannot enroll in own course";
         await order.save();
@@ -110,11 +112,36 @@ export const verifyPayment = async (req, res) => {
       }
 
       // Check if already enrolled
-      const isAlreadyEnrolled = course.enrolledStudents && Array.isArray(course.enrolledStudents) && course.enrolledStudents.some(
-        (id) => id.toString() === userId.toString()
-      );
+      const isAlreadyEnrolledInCourse =
+        Array.isArray(course.enrolledStudents) &&
+        course.enrolledStudents.some((id) => id?.toString?.() === normalizedUserId);
+      const isAlreadyEnrolledInUser =
+        Array.isArray(user.enrolledCourses) &&
+        user.enrolledCourses.some((id) => id?.toString?.() === courseId?.toString?.());
+      const isAlreadyEnrolled = isAlreadyEnrolledInCourse || isAlreadyEnrolledInUser;
 
       if (isAlreadyEnrolled) {
+        const fixes = [];
+        if (!isAlreadyEnrolledInUser) {
+          fixes.push(
+            User.updateOne(
+              { _id: userId },
+              { $addToSet: { enrolledCourses: course._id } }
+            )
+          );
+        }
+        if (!isAlreadyEnrolledInCourse) {
+          fixes.push(
+            Course.updateOne(
+              { _id: courseId },
+              { $addToSet: { enrolledStudents: user._id } }
+            )
+          );
+        }
+        if (fixes.length) {
+          await Promise.all(fixes);
+        }
+
         return res.status(200).json({ 
           message: "Payment verified. You are already enrolled in this course",
           alreadyEnrolled: true,
@@ -123,15 +150,17 @@ export const verifyPayment = async (req, res) => {
         });
       }
 
-      // Add enrollment
-      user.enrolledCourses.push(courseId);
-      await user.save();
-
-      if (!course.enrolledStudents) {
-        course.enrolledStudents = [];
-      }
-      course.enrolledStudents.push(userId);
-      await course.save();
+      // Add enrollment atomically on both documents.
+      await Promise.all([
+        User.updateOne(
+          { _id: userId },
+          { $addToSet: { enrolledCourses: course._id } }
+        ),
+        Course.updateOne(
+          { _id: courseId },
+          { $addToSet: { enrolledStudents: user._id } }
+        ),
+      ]);
 
       console.log(`[Order] Payment verified successfully. Order: ${order._id}, Receipt: ${order.receiptId}`);
 

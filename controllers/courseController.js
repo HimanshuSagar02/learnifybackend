@@ -313,6 +313,18 @@ export const enrollCourse = async (req, res) => {
     if (!course) return res.status(404).json({ message: "Course Not Found" });
     if (!user) return res.status(404).json({ message: "User Not Found" });
 
+    const normalizedUserId = userId?.toString?.() || String(userId || "");
+    const coursePrice = Number(course.price);
+    const isPaidCourse = Number.isFinite(coursePrice) && coursePrice > 0;
+
+    // Paid courses should go through payment flow only.
+    if (isPaidCourse) {
+      return res.status(400).json({
+        message: "This course is paid. Please complete payment to enroll.",
+        code: "PAYMENT_REQUIRED",
+      });
+    }
+
     // Prevent educators and admins from enrolling in courses
     if (user.role === "educator" || user.role === "admin") {
       return res.status(403).json({ 
@@ -321,34 +333,62 @@ export const enrollCourse = async (req, res) => {
     }
 
     // Prevent enrolling in own course (if somehow a student created a course)
-    if (course.creator.toString() === userId.toString()) {
+    const creatorId = course.creator?.toString?.();
+    if (creatorId && creatorId === normalizedUserId) {
       return res.status(403).json({ 
         message: "You cannot enroll in your own course." 
       });
     }
 
     // Check if already enrolled
-    const isAlreadyEnrolled = course.enrolledStudents && Array.isArray(course.enrolledStudents) && course.enrolledStudents.some(
-      (id) => id.toString() === userId.toString()
-    );
+    const isAlreadyEnrolledInCourse =
+      Array.isArray(course.enrolledStudents) &&
+      course.enrolledStudents.some((id) => id?.toString?.() === normalizedUserId);
+    const isAlreadyEnrolledInUser =
+      Array.isArray(user.enrolledCourses) &&
+      user.enrolledCourses.some((id) => id?.toString?.() === courseId?.toString?.());
+    const isAlreadyEnrolled = isAlreadyEnrolledInCourse || isAlreadyEnrolledInUser;
 
     if (isAlreadyEnrolled) {
+      // Heal partial enrollment state if one side is missing.
+      const fixes = [];
+      if (!isAlreadyEnrolledInCourse) {
+        fixes.push(
+          Course.updateOne(
+            { _id: courseId },
+            { $addToSet: { enrolledStudents: user._id } }
+          )
+        );
+      }
+      if (!isAlreadyEnrolledInUser) {
+        fixes.push(
+          User.updateOne(
+            { _id: userId },
+            { $addToSet: { enrolledCourses: course._id } }
+          )
+        );
+      }
+      if (fixes.length) {
+        await Promise.all(fixes);
+      }
+
       return res.status(200).json({ 
         message: "You are already enrolled in this course",
         alreadyEnrolled: true
       });
     }
 
-    // Add user inside course
-    if (!course.enrolledStudents) {
-      course.enrolledStudents = [];
-    }
-    course.enrolledStudents.push(userId);
-    await course.save();
-
-    // Add course inside user
-    user.enrolledCourses.push(courseId);
-    await user.save();
+    // Add enrollment atomically on both documents.
+    await Promise.all([
+      Course.updateOne(
+        { _id: courseId },
+        { $addToSet: { enrolledStudents: user._id } }
+      ),
+      User.updateOne(
+        { _id: userId },
+        { $addToSet: { enrolledCourses: course._id } }
+      ),
+    ]);
 
     return res.status(200).json({ 
       message: "Successfully enrolled in the course",
@@ -356,7 +396,8 @@ export const enrollCourse = async (req, res) => {
     });
 
   } catch (error) {
-    return res.status(500).json({ message: `Enrollment Error: ${error}` });
+    console.error("[EnrollCourse] Error:", error);
+    return res.status(500).json({ message: `Enrollment Error: ${error.message || error}` });
   }
 };
 
