@@ -26,11 +26,11 @@ certificateSchema.pre("save", async function(next) {
     let isUnique = false;
     
     while (!isUnique) {
-      // Format: RCR-YYYYMMDD-XXXXXX (6 random alphanumeric)
+      // Format: LEARNIFY-YYYYMMDD-XXXXXX (6 random alphanumeric)
       const date = new Date();
       const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
       const randomStr = Math.random().toString(36).substring(2, 8).toUpperCase();
-      uniqueId = `RCR-${dateStr}-${randomStr}`;
+      uniqueId = `LEARNIFY-${dateStr}-${randomStr}`;
       
       // Check if ID already exists
       const existing = await mongoose.model("Certificate").findOne({ certificateId: uniqueId });

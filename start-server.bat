@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo Starting RCR Backend Server...
+echo Starting Learnify Backend Server...
 echo ========================================
 echo.
 

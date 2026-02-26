@@ -11,7 +11,7 @@ const createAdmin = async () => {
     await connectDb();
     
     // Default admin credentials
-    const adminEmail = process.env.ADMIN_EMAIL || "admin@rcr.com";
+    const adminEmail = process.env.ADMIN_EMAIL || "admin@learnify.com";
     const adminPassword = process.env.ADMIN_PASSWORD || "Admin@123";
     const adminName = process.env.ADMIN_NAME || "Admin User";
 

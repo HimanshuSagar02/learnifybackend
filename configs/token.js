@@ -19,8 +19,8 @@ export const genToken = async (userId) => {
             process.env.JWT_SECRET, 
             {
                 expiresIn: "7d",
-                issuer: "rcr-platform",
-                audience: "rcr-users"
+                issuer: "learnify-platform",
+                audience: "learnify-users"
             }
         );
         
@@ -39,8 +39,8 @@ export const verifyToken = (token) => {
         }
         
         const decoded = jwt.verify(token, process.env.JWT_SECRET, {
-            issuer: "rcr-platform",
-            audience: "rcr-users"
+            issuer: "learnify-platform",
+            audience: "learnify-users"
         });
         
         return decoded;

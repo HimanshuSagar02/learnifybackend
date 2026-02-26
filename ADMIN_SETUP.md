@@ -12,7 +12,7 @@ Content-Type: application/json
 
 {
   "name": "Admin User",
-  "email": "admin@rcr.com",
+  "email": "admin@learnify.com",
   "password": "Admin@123"
 }
 ```
@@ -23,7 +23,7 @@ curl -X POST http://localhost:8000/api/setup/create-first-admin \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Admin User",
-    "email": "admin@rcr.com",
+    "email": "admin@learnify.com",
     "password": "Admin@123"
   }'
 ```
@@ -38,7 +38,7 @@ npm run create-admin
 ```
 
 **Default credentials (if using script):**
-- Email: `admin@rcr.com` (or set `ADMIN_EMAIL` in `.env`)
+- Email: `admin@learnify.com` (or set `ADMIN_EMAIL` in `.env`)
 - Password: `Admin@123` (or set `ADMIN_PASSWORD` in `.env`)
 - Name: `Admin User` (or set `ADMIN_NAME` in `.env`)
 

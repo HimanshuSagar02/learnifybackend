@@ -39,11 +39,11 @@ const sendMail=async (to,otp) => {
         const info = await transporter.sendMail({
             from: process.env.EMAIL,
             to: to,
-            subject: "Reset Your Password - RCR",
+            subject: "Reset Your Password - Learnify",
             html: `
                 <div style="font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: 0 auto;">
                     <h2 style="color: #333;">Password Reset Request</h2>
-                    <p>You requested to reset your password for RCR (RAJ CHEM REACTOR) account.</p>
+                    <p>You requested to reset your password for Learnify account.</p>
                     <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
                         <p style="margin: 0; font-size: 24px; font-weight: bold; color: #000; text-align: center; letter-spacing: 5px;">
                             ${otp}

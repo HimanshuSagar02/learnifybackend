@@ -130,9 +130,9 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
     doc.save();
     doc.font("Helvetica-Bold")
        .fontSize(140)
-       .fillColor("#FFD700")
+       .fillColor("#3B82F6")
        .opacity(0.15)
-       .text("RCR", doc.page.width / 2 - 250, doc.page.height / 2 - 110);
+       .text("Learnify", doc.page.width / 2 - 250, doc.page.height / 2 - 110);
     doc.restore();
 
     /* ---------- TITLE ---------- */
@@ -194,7 +194,7 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
 
     /* ---------- FOOTER ---------- */
     doc.fontSize(10).fillColor("#666")
-       .text("RCR • RAJ CHEM REACTOR", 0, doc.page.height - 35, { align: "center" });
+       .text("Learnify", 0, doc.page.height - 35, { align: "center" });
     doc.fontSize(8).fillColor("#999")
        .text(`Verify at: ${verifyUrl}`, 0, doc.page.height - 25, { align: "center" });
 

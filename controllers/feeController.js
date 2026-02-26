@@ -612,7 +612,7 @@ export const generateFeeReceipt = async (req, res) => {
       return res.status(404).json({ message: "Payment entry not found" });
     }
 
-    const receiptId = `RCR-FEE-${record._id.toString().slice(-6)}-${payment._id.toString().slice(-6)}`;
+    const receiptId = `LEARNIFY-FEE-${record._id.toString().slice(-6)}-${payment._id.toString().slice(-6)}`;
 
     const doc = new PDFDocument({
       layout: "portrait",
@@ -624,7 +624,7 @@ export const generateFeeReceipt = async (req, res) => {
     res.setHeader("Content-Disposition", `inline; filename=Fee-Receipt-${receiptId}.pdf`);
     doc.pipe(res);
 
-    doc.fontSize(22).font("Helvetica-Bold").fillColor("#000").text("RCR - RAJ CHEM REACTOR", {
+    doc.fontSize(22).font("Helvetica-Bold").fillColor("#000").text("Learnify", {
       align: "center",
     });
     doc.moveDown(0.3);

@@ -65,7 +65,7 @@ export const generateReceipt = async (req, res) => {
     doc.fontSize(24)
        .font("Helvetica-Bold")
        .fillColor("#000")
-       .text("RCR - RAJ CHEM REACTOR", 50, 50, { align: "center" });
+       .text("Learnify", 50, 50, { align: "center" });
 
     doc.fontSize(18)
        .font("Helvetica-Bold")
@@ -203,7 +203,7 @@ export const generateReceipt = async (req, res) => {
        .fillColor("#666")
        .text("This is a computer-generated receipt. No signature required.", 50, 680, { align: "center" });
     
-    doc.text("RCR - RAJ CHEM REACTOR", 50, 700, { align: "center" });
+    doc.text("Learnify", 50, 700, { align: "center" });
     doc.text("Thank you for your enrollment!", 50, 715, { align: "center" });
 
     doc.end();

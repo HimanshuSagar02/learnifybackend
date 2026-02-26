@@ -48,11 +48,11 @@ export const generateFeedbackReport = async (req, res) => {
     // Header
     doc.fontSize(24)
        .fillColor("#000000")
-       .text("RCR - Feedback Report", { align: "center" });
+       .text("Learnify - Feedback Report", { align: "center" });
     
     doc.fontSize(12)
        .fillColor("#666666")
-       .text("RAJ CHEM REACTOR", { align: "center" });
+       .text("Learnify", { align: "center" });
     
     doc.moveDown(2);
 
@@ -65,7 +65,7 @@ export const generateFeedbackReport = async (req, res) => {
 
     // Statistics Section
     doc.fontSize(16)
-       .fillColor("#FFD700")
+       .fillColor("#3B82F6")
        .text("Summary Statistics", { underline: true });
     
     doc.moveDown(0.5);
@@ -80,7 +80,7 @@ export const generateFeedbackReport = async (req, res) => {
 
     // Feedback Details
     doc.fontSize(16)
-       .fillColor("#FFD700")
+       .fillColor("#3B82F6")
        .text("Feedback Details", { underline: true });
     
     doc.moveDown(1);
@@ -151,7 +151,7 @@ export const generateFeedbackReport = async (req, res) => {
       doc.fontSize(8)
          .fillColor("#666666")
          .text(
-           `Page ${i + 1} of ${totalPages} | RCR - RAJ CHEM REACTOR`,
+           `Page ${i + 1} of ${totalPages} | Learnify`,
            50,
            doc.page.height - 30,
            { align: "center" }
