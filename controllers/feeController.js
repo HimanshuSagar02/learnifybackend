@@ -612,7 +612,7 @@ export const generateFeeReceipt = async (req, res) => {
       return res.status(404).json({ message: "Payment entry not found" });
     }
 
-    const receiptId = `LEARNIFY-FEE-${record._id.toString().slice(-6)}-${payment._id.toString().slice(-6)}`;
+    const receiptId = `Learnify-FEE-${record._id.toString().slice(-6)}-${payment._id.toString().slice(-6)}`;
 
     const doc = new PDFDocument({
       layout: "portrait",
@@ -676,3 +676,5 @@ export const generateFeeReceipt = async (req, res) => {
     });
   }
 };
+
+

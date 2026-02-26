@@ -57,7 +57,24 @@ export const validateSignup = [
   
   body('class')
     .optional()
-    .isIn(['9th', '10th', '11th', '12th', 'NEET Dropper', '']).withMessage('Invalid class value'),
+    .isIn([
+      'General',
+      'CSE',
+      'IT',
+      'ECE',
+      'EEE',
+      'Mechanical',
+      'Civil',
+      'BCA',
+      'MCA',
+      'BBA',
+      'BCom',
+      'BA',
+      'BSc',
+      'MBA',
+      'Other',
+      ''
+    ]).withMessage('Invalid branch value'),
   
   body('subject')
     .optional()
@@ -170,8 +187,24 @@ export const validateCourse = [
     .escape(),
   
   body('class')
-    .notEmpty().withMessage('Class is required')
-    .isIn(['9th', '10th', '11th', '12th', 'NEET Dropper']).withMessage('Invalid class value'),
+    .notEmpty().withMessage('Branch is required')
+    .isIn([
+      'General',
+      'CSE',
+      'IT',
+      'ECE',
+      'EEE',
+      'Mechanical',
+      'Civil',
+      'BCA',
+      'MCA',
+      'BBA',
+      'BCom',
+      'BA',
+      'BSc',
+      'MBA',
+      'Other'
+    ]).withMessage('Invalid branch value'),
   
   body('subject')
     .trim()

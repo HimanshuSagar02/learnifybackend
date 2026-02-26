@@ -60,11 +60,11 @@ orderSchema.pre("save", async function(next) {
     let isUnique = false;
     
     while (!isUnique) {
-      // Format: LEARNIFY-RCP-YYYYMMDD-XXXXXX
+      // Format: Learnify-RCP-YYYYMMDD-XXXXXX
       const date = new Date();
       const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
       const randomStr = Math.random().toString(36).substring(2, 8).toUpperCase();
-      uniqueId = `LEARNIFY-RCP-${dateStr}-${randomStr}`;
+      uniqueId = `Learnify-RCP-${dateStr}-${randomStr}`;
       
       const existing = await mongoose.model("Order").findOne({ receiptId: uniqueId });
       if (!existing) {
@@ -89,3 +89,5 @@ orderSchema.index({ razorpay_order_id: 1 });
 
 const Order = mongoose.model("Order", orderSchema);
 export default Order;
+
+

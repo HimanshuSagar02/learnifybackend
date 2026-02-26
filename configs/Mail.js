@@ -69,3 +69,4 @@ const sendMail=async (to,otp) => {
 
 
 export default sendMail
+

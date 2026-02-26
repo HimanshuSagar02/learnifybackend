@@ -26,11 +26,11 @@ certificateSchema.pre("save", async function(next) {
     let isUnique = false;
     
     while (!isUnique) {
-      // Format: LEARNIFY-YYYYMMDD-XXXXXX (6 random alphanumeric)
+      // Format: Learnify-YYYYMMDD-XXXXXX (6 random alphanumeric)
       const date = new Date();
       const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
       const randomStr = Math.random().toString(36).substring(2, 8).toUpperCase();
-      uniqueId = `LEARNIFY-${dateStr}-${randomStr}`;
+      uniqueId = `Learnify-${dateStr}-${randomStr}`;
       
       // Check if ID already exists
       const existing = await mongoose.model("Certificate").findOne({ certificateId: uniqueId });
@@ -50,3 +50,5 @@ certificateSchema.index({ userId: 1, courseId: 1 });
 certificateSchema.index({ isActive: 1 });
 
 export default mongoose.model("Certificate", certificateSchema);
+
+

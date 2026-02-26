@@ -26,7 +26,24 @@ const userSchema = new mongoose.Schema(
     },
     class: {
       type: String,
-      enum: ["9th", "10th", "11th", "12th", "NEET Dropper", ""],
+      enum: [
+        "General",
+        "CSE",
+        "IT",
+        "ECE",
+        "EEE",
+        "Mechanical",
+        "Civil",
+        "BCA",
+        "MCA",
+        "BBA",
+        "BCom",
+        "BA",
+        "BSc",
+        "MBA",
+        "Other",
+        ""
+      ],
       default: ""
     },
     subject: {

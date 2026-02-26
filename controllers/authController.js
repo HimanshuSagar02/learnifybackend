@@ -20,7 +20,8 @@ export const signUp=async (req,res)=>{
  
     try {
 
-        let {name,email,password,role,class:studentClass,subject}= req.body
+        let {name,email,password,role,class:studentClass,branch,subject}= req.body
+        const studentBranch = String(branch || studentClass || "").trim();
         const normalizedEmail = email?.toLowerCase().trim();
         
         // Prevent educator/teacher signup - only students can sign up
@@ -54,18 +55,13 @@ export const signUp=async (req,res)=>{
             return res.status(400).json({message:"Password must contain at least one number"})
         }
         
-        // Validate class for students (mandatory)
-        if(!studentClass){
-            return res.status(400).json({message:"Class/Grade is mandatory for students. Please select 9th, 10th, 11th, 12th, or NEET Dropper"})
-        }
-        
         let hashPassword = await bcrypt.hash(password,10)
         let user = await User.create({
             name ,
             email: normalizedEmail ,
             password:hashPassword ,
             role: "student", // Always student
-            class: studentClass,
+            class: studentBranch,
             subject: subject || "",
             status:"pending",
             createdByAdmin:false
@@ -303,7 +299,8 @@ export const logOut = async(req,res)=>{
 
 export const googleSignup = async (req,res) => {
     try {
-        const {name , email , role, photoUrl, class: studentClass, subject} = req.body
+        const {name , email , role, photoUrl, class: studentClass, branch, subject} = req.body
+        const studentBranch = String(branch || studentClass || "").trim();
         const normalizedEmail = email?.toLowerCase().trim();
         
         if (!normalizedEmail) {
@@ -317,11 +314,6 @@ export const googleSignup = async (req,res) => {
             })
         }
         
-        // Validate class for students (mandatory)
-        if(!studentClass){
-            return res.status(400).json({message:"Class/Grade is mandatory for students. Please select 9th, 10th, 11th, 12th, or NEET Dropper"})
-        }
-        
         let user = await User.findOne({email: normalizedEmail})
         
         if(!user){
@@ -331,7 +323,7 @@ export const googleSignup = async (req,res) => {
                 email: normalizedEmail,
                 role: "student", // Always student
                 photoUrl: photoUrl || "",
-                class: studentClass,
+                class: studentBranch,
                 subject: subject || "",
                 status: "approved", // Auto-approve Google signups
                 createdByAdmin: false

@@ -39,6 +39,8 @@ const buildCourseSearchQuery = (rawTerm) => {
       { subTitle: { $regex: term, $options: "i" } },
       { description: { $regex: term, $options: "i" } },
       { category: { $regex: term, $options: "i" } },
+      { subject: { $regex: term, $options: "i" } },
+      { class: { $regex: term, $options: "i" } },
       { level: { $regex: term, $options: "i" } },
     ],
   };
@@ -65,18 +67,20 @@ export const searchWithAi = async (req, res) => {
     }
 
     const ai = new GoogleGenAI({ apiKey });
-    const prompt = `You are an intelligent assistant for an academic LMS platform for 9th-12th grade students and NEET/JEE droppers. A user will type any query about what they want to learn. Your task is to understand the intent and return one most relevant keyword from the following list of academic categories and classes:
+    const prompt = `You are an intelligent assistant for a technical learning platform. A user will type any query about what they want to learn. Your task is to understand intent and return one most relevant keyword from this list:
 
-- 9th
-- 10th
-- 11th
-- 12th
-- NEET
-- JEE
-- Physics
-- Chemistry
-- Biology
-- Mathematics
+- Programming Fundamentals
+- Data Structures
+- Web Development
+- Mobile Development
+- AI/ML
+- Data Science
+- Cloud & DevOps
+- Cybersecurity
+- Language Learning
+- Beginner
+- Intermediate
+- Advanced
 - Other
 
 Only reply with one single keyword from the list above that best matches the query. Do not explain anything. No extra text.

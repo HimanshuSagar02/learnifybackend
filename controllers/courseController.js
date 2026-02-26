@@ -7,13 +7,14 @@ import User from "../models/userModel.js";
 /* ============================= Create Course ============================= */
 export const createCourse = async (req, res) => {
   try {
-    const { title, category, class: courseClass, subject } = req.body;
+    const { title, category, class: courseClass, branch, subject } = req.body;
+    const courseBranch = String(branch || courseClass || "").trim();
 
     if (!title || !category) {
       return res.status(400).json({ message: "Title & Category is required" });
     }
-    if (!courseClass) {
-      return res.status(400).json({ message: "Class/Grade is required (9th, 10th, 11th, 12th, or NEET Dropper)" });
+    if (!courseBranch) {
+      return res.status(400).json({ message: "Branch is required (for example: CSE, IT, ECE or General)" });
     }
     if (!subject) {
       return res.status(400).json({ message: "Subject is required" });
@@ -22,7 +23,7 @@ export const createCourse = async (req, res) => {
     const course = await Course.create({
       title,
       category,
-      class: courseClass,
+      class: courseBranch,
       subject,
       creator: req.userId,
     });
