@@ -84,7 +84,10 @@ export const signUp=async (req,res)=>{
         // Return user without password
         const userResponse = user.toObject();
         delete userResponse.password;
-        return res.status(201).json(userResponse)
+        return res.status(201).json({
+            ...userResponse,
+            authToken: token
+        })
 
     } catch (error) {
         console.log("signUp error")
@@ -225,7 +228,10 @@ export const login=async(req,res)=>{
         delete userResponse.password;
         
         debugLog(`[Login] Login successful for: ${email}, Role: ${user.role}, UserID: ${user._id}`);
-        return res.status(200).json(userResponse)
+        return res.status(200).json({
+            ...userResponse,
+            authToken: token
+        })
 
     } catch (error) {
         console.error("[Login] Login error:", error?.message || error);
@@ -374,7 +380,10 @@ export const googleSignup = async (req,res) => {
         // Return user without password
         const userResponse = user.toObject()
         delete userResponse.password
-        return res.status(200).json(userResponse)
+        return res.status(200).json({
+            ...userResponse,
+            authToken: token
+        })
 
     } catch (error) {
         console.error("Google signup error:", error)
