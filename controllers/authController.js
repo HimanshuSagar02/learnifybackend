@@ -481,8 +481,8 @@ export const sendOtp = async (req,res) => {
             }
             
             return res.status(500).json({
-                message: "Failed to send email. Please check your email configuration or try again later.",
-                error: process.env.NODE_ENV === 'development' ? mailError.message : undefined
+                message: mailError?.message || "Failed to send email. Please check your email configuration.",
+                hint: "Set EMAIL/EMAIL_PASS (or SMTP_USER/SMTP_PASS) in backend environment and redeploy."
             });
         }
     } catch (error) {

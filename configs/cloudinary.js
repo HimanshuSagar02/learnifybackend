@@ -1,129 +1,118 @@
-import { v2 as cloudinary } from 'cloudinary';
-import fs from "fs"
+import { v2 as cloudinary } from "cloudinary";
+import fs from "fs";
 
-// Validate Cloudinary configuration
-const validateCloudinaryConfig = () => {
-    const cloudName = process.env.CLOUDINARY_CLOUD_NAME;
-    const apiKey = process.env.CLOUDINARY_API_KEY;
-    const apiSecret = process.env.CLOUDINARY_API_SECRET;
-    
-    if (!cloudName || !apiKey || !apiSecret) {
-        console.error("❌ Cloudinary Configuration Missing:");
-        if (!cloudName) console.error("   - CLOUDINARY_CLOUD_NAME is missing");
-        if (!apiKey) console.error("   - CLOUDINARY_API_KEY is missing");
-        if (!apiSecret) console.error("   - CLOUDINARY_API_SECRET is missing");
-        return false;
-    }
+const sanitizeEnvValue = (value) =>
+  String(value || "")
+    .trim()
+    .replace(/^['"]+|['"]+$/g, "")
+    .trim();
+
+const getCloudinaryEnv = () => ({
+  cloudName: sanitizeEnvValue(process.env.CLOUDINARY_CLOUD_NAME),
+  apiKey: sanitizeEnvValue(process.env.CLOUDINARY_API_KEY),
+  apiSecret: sanitizeEnvValue(process.env.CLOUDINARY_API_SECRET),
+});
+
+const getMissingConfigKeys = () => {
+  const { cloudName, apiKey, apiSecret } = getCloudinaryEnv();
+  const missing = [];
+  if (!cloudName) missing.push("CLOUDINARY_CLOUD_NAME");
+  if (!apiKey) missing.push("CLOUDINARY_API_KEY");
+  if (!apiSecret) missing.push("CLOUDINARY_API_SECRET");
+  return missing;
+};
+
+let configuredSignature = "";
+
+const ensureCloudinaryConfigured = () => {
+  const missing = getMissingConfigKeys();
+  if (missing.length > 0) {
+    console.error("[Cloudinary] Missing configuration:", missing.join(", "));
+    return false;
+  }
+
+  const { cloudName, apiKey, apiSecret } = getCloudinaryEnv();
+  const nextSignature = `${cloudName}|${apiKey}|${apiSecret}`;
+  if (configuredSignature === nextSignature) {
     return true;
-}
+  }
 
-// Configure Cloudinary
-const configureCloudinary = () => {
-    if (!validateCloudinaryConfig()) {
-        return false;
-    }
-    
-    cloudinary.config({ 
-        cloud_name: process.env.CLOUDINARY_CLOUD_NAME, 
-        api_key: process.env.CLOUDINARY_API_KEY, 
-        api_secret: process.env.CLOUDINARY_API_SECRET 
+  cloudinary.config({
+    cloud_name: cloudName,
+    api_key: apiKey,
+    api_secret: apiSecret,
+  });
+  configuredSignature = nextSignature;
+  return true;
+};
+
+const cleanupLocalFile = (filePath) => {
+  if (!filePath) return;
+  if (!fs.existsSync(filePath)) return;
+  try {
+    fs.unlinkSync(filePath);
+  } catch (error) {
+    console.error("[Cloudinary] Failed to delete local file:", error?.message || error);
+  }
+};
+
+const uploadOnCloudinary = async (filePath) => {
+  if (!filePath) {
+    console.warn("[Cloudinary] No file path provided");
+    return null;
+  }
+
+  if (!fs.existsSync(filePath)) {
+    console.error(`[Cloudinary] File not found: ${filePath}`);
+    return null;
+  }
+
+  if (!ensureCloudinaryConfigured()) {
+    cleanupLocalFile(filePath);
+    return null;
+  }
+
+  try {
+    const uploadResult = await cloudinary.uploader.upload(filePath, {
+      resource_type: "auto",
+      chunk_size: 6000000,
     });
-    
-    return true;
-}
+    cleanupLocalFile(filePath);
+    return uploadResult?.secure_url || null;
+  } catch (error) {
+    cleanupLocalFile(filePath);
+    console.error("[Cloudinary] Upload failed:", {
+      message: error?.message,
+      http_code: error?.http_code,
+      name: error?.name,
+    });
+    return null;
+  }
+};
 
-// Initialize configuration
-const isConfigured = configureCloudinary();
-
-const uploadOnCloudinary = async(filePath)=>{
-    // Check if Cloudinary is configured
-    if (!isConfigured) {
-        console.error("❌ Cloudinary is not configured. Please check your .env file.");
-        return null;
-    }
-    
-    try {
-       if(!filePath){
-        console.warn("⚠️ No file path provided to uploadOnCloudinary");
-        return null
-       }
-       
-       // Check if file exists
-       if (!fs.existsSync(filePath)) {
-           console.error(`❌ File not found: ${filePath}`);
-           return null;
-       }
-       
-       console.log(`📤 Uploading to Cloudinary: ${filePath}`);
-       
-       const uploadResult = await cloudinary.uploader.upload(filePath,{
-           resource_type:'auto',
-           chunk_size: 6000000 // 6MB chunks for video uploads
-       })
-       
-       console.log(`✅ Upload successful! URL: ${uploadResult.secure_url}`);
-       
-       // Clean up local file
-       if (fs.existsSync(filePath)) {
-           fs.unlinkSync(filePath)
-           console.log(`🗑️ Deleted local file: ${filePath}`);
-       }
-       
-       return uploadResult.secure_url
-    } catch (error) {
-        // Clean up local file even on error
-        if (fs.existsSync(filePath)) {
-            try {
-                fs.unlinkSync(filePath)
-            } catch (unlinkError) {
-                console.error("Error deleting file:", unlinkError);
-            }
-        }
-        console.error("❌ Cloudinary upload error:", error.message || error);
-        console.error("   Error details:", {
-            message: error.message,
-            http_code: error.http_code,
-            name: error.name
-        });
-        return null;
-    }
-}
-
-// Test Cloudinary connection
 export const testCloudinary = async () => {
-    if (!isConfigured) {
-        return {
-            success: false,
-            message: "Cloudinary is not configured. Please check your .env file.",
-            details: {
-                cloudName: process.env.CLOUDINARY_CLOUD_NAME ? "Set" : "Missing",
-                apiKey: process.env.CLOUDINARY_API_KEY ? "Set" : "Missing",
-                apiSecret: process.env.CLOUDINARY_API_SECRET ? "Set" : "Missing"
-            }
-        };
-    }
-    
-    try {
-        // Test API connection by getting account details
-        const result = await cloudinary.api.ping();
-        return {
-            success: true,
-            message: "Cloudinary is configured and working!",
-            status: result.status,
-            cloudName: process.env.CLOUDINARY_CLOUD_NAME
-        };
-    } catch (error) {
-        return {
-            success: false,
-            message: "Cloudinary configuration test failed",
-            error: error.message || error,
-            details: {
-                cloudName: process.env.CLOUDINARY_CLOUD_NAME ? "Set" : "Missing",
-                apiKey: process.env.CLOUDINARY_API_KEY ? "Set" : "Missing",
-                apiSecret: process.env.CLOUDINARY_API_SECRET ? "Set" : "Missing"
-            }
-        };
-    }
-}
+  if (!ensureCloudinaryConfigured()) {
+    return {
+      success: false,
+      message: "Cloudinary is not configured correctly",
+      missing: getMissingConfigKeys(),
+    };
+  }
 
-export default uploadOnCloudinary
+  try {
+    const result = await cloudinary.api.ping();
+    return {
+      success: true,
+      message: "Cloudinary is configured and reachable",
+      status: result?.status,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: "Cloudinary ping failed",
+      error: error?.message || "Unknown error",
+    };
+  }
+};
+
+export default uploadOnCloudinary;

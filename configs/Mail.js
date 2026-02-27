@@ -3,8 +3,28 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const EMAIL_USER = String(process.env.EMAIL || "").trim();
-const EMAIL_PASS = String(process.env.EMAIL_PASS || "").trim();
+const toBool = (value, fallback = false) => {
+  if (typeof value === "boolean") return value;
+  const normalized = String(value || "").trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return fallback;
+};
+
+const EMAIL_USER = String(
+  process.env.EMAIL || process.env.SMTP_USER || process.env.MAIL_USER || ""
+).trim();
+const EMAIL_PASS = String(
+  process.env.EMAIL_PASS ||
+    process.env.SMTP_PASS ||
+    process.env.MAIL_PASS ||
+    process.env.GMAIL_APP_PASSWORD ||
+    ""
+).trim();
+const SMTP_HOST = String(process.env.SMTP_HOST || "smtp.gmail.com").trim();
+const SMTP_PORT = Number(process.env.SMTP_PORT || 465);
+const SMTP_SECURE = toBool(process.env.SMTP_SECURE, SMTP_PORT === 465);
+const MAIL_FROM = String(process.env.EMAIL_FROM || EMAIL_USER).trim();
 const MAIL_TIMEOUT_MS = 15000;
 const isEmailConfigured = Boolean(EMAIL_USER && EMAIL_PASS);
 
@@ -13,9 +33,9 @@ if (!isEmailConfigured) {
 }
 
 const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true,
+  host: SMTP_HOST,
+  port: Number.isFinite(SMTP_PORT) ? SMTP_PORT : 465,
+  secure: SMTP_SECURE,
   auth: {
     user: EMAIL_USER,
     pass: EMAIL_PASS,
@@ -51,7 +71,7 @@ const sendMail = async (to, otp) => {
     });
 
     const sendPromise = transporter.sendMail({
-      from: `"Learnify" <${EMAIL_USER}>`,
+      from: `"Learnify" <${MAIL_FROM}>`,
       to,
       subject: "Reset Your Password - Learnify",
       html: `
@@ -82,7 +102,7 @@ const sendMail = async (to, otp) => {
     console.error("Error sending email:", error.message);
 
     if (error.code === "EAUTH") {
-      throw new Error("Email authentication failed. Please check your EMAIL and EMAIL_PASS in .env file.");
+      throw new Error("Email authentication failed. Check EMAIL/EMAIL_PASS or SMTP credentials.");
     }
 
     if (error.code === "ETIMEDOUT" || /timeout/i.test(String(error.message || ""))) {

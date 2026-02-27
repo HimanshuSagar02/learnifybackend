@@ -12,6 +12,7 @@ import {
   addTeamMember,
   updateTeamMember,
   deleteTeamMember,
+  updateAboutProject,
   createDemoBooking,
   getDemoBookings,
   updateDemoBookingStatus,
@@ -27,9 +28,10 @@ marketingRoute.put("/admin/content", isAuth, isAdmin, upload.single("offerImage"
 marketingRoute.post("/admin/gallery", isAuth, isAdmin, upload.single("image"), addGalleryItem);
 marketingRoute.patch("/admin/gallery/:itemId", isAuth, isAdmin, updateGalleryItem);
 marketingRoute.delete("/admin/gallery/:itemId", isAuth, isAdmin, deleteGalleryItem);
-marketingRoute.post("/admin/team", isAuth, isAdmin, addTeamMember);
-marketingRoute.patch("/admin/team/:memberId", isAuth, isAdmin, updateTeamMember);
+marketingRoute.post("/admin/team", isAuth, isAdmin, upload.single("image"), addTeamMember);
+marketingRoute.patch("/admin/team/:memberId", isAuth, isAdmin, upload.single("image"), updateTeamMember);
 marketingRoute.delete("/admin/team/:memberId", isAuth, isAdmin, deleteTeamMember);
+marketingRoute.patch("/admin/about-project", isAuth, isAdmin, updateAboutProject);
 marketingRoute.get("/admin/demo-bookings", isAuth, isAdmin, getDemoBookings);
 marketingRoute.patch("/admin/demo-bookings/:bookingId/status", isAuth, isAdmin, updateDemoBookingStatus);
 

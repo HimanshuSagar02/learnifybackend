@@ -34,6 +34,19 @@ const teamMemberSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+const aboutProjectSchema = new mongoose.Schema(
+  {
+    badgeTitle: { type: String, default: "About Project", trim: true },
+    headline: { type: String, default: "", trim: true },
+    subheadline: { type: String, default: "", trim: true },
+    description: { type: String, default: "", trim: true },
+    highlights: { type: [String], default: [] },
+    imageUrl: { type: String, default: "", trim: true },
+    isActive: { type: Boolean, default: true },
+  },
+  { _id: false }
+);
+
 const marketingContentSchema = new mongoose.Schema(
   {
     key: {
@@ -62,6 +75,18 @@ const marketingContentSchema = new mongoose.Schema(
     teamMembers: {
       type: [teamMemberSchema],
       default: [],
+    },
+    aboutProject: {
+      type: aboutProjectSchema,
+      default: () => ({
+        badgeTitle: "About Project",
+        headline: "",
+        subheadline: "",
+        description: "",
+        highlights: [],
+        imageUrl: "",
+        isActive: true,
+      }),
     },
     updatedBy: {
       type: mongoose.Schema.Types.ObjectId,

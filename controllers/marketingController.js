@@ -21,12 +21,37 @@ const parseBoolean = (value, fallback = false) => {
   return fallback;
 };
 
+const ALLOWED_PROFILE_DOMAINS = [
+  "linkedin.com",
+  "github.com",
+  "x.com",
+  "twitter.com",
+  "instagram.com",
+  "facebook.com",
+  "youtube.com",
+];
+
+const isAllowedProfileLink = (value) => {
+  if (!validator.isURL(value, { require_protocol: true })) {
+    return false;
+  }
+
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return ALLOWED_PROFILE_DOMAINS.some(
+      (domain) => hostname === domain || hostname.endsWith(`.${domain}`)
+    );
+  } catch {
+    return false;
+  }
+};
+
 const normalizeTeamMemberInput = (payload = {}, { requireName = false } = {}) => {
   const name = String(payload.name || "").trim();
   const role = String(payload.role || "").trim();
   const description = String(payload.description || "").trim();
   const profileLink = String(payload.profileLink || "").trim();
-  const imageUrl = String(payload.imageUrl || "").trim();
+  const imageUrlFromPayload = String(payload.imageUrl || "").trim();
   const displayOrder = Number.isFinite(Number(payload.displayOrder))
     ? Number(payload.displayOrder)
     : 0;
@@ -35,11 +60,13 @@ const normalizeTeamMemberInput = (payload = {}, { requireName = false } = {}) =>
   if (requireName && !name) {
     throw new Error("Team member name is required");
   }
-  if (profileLink && !validator.isURL(profileLink, { require_protocol: true })) {
-    throw new Error("Profile link must be a valid URL with http/https");
+  if (profileLink && !isAllowedProfileLink(profileLink)) {
+    throw new Error(
+      "Profile link must be a valid LinkedIn/GitHub/X/Instagram/Facebook/YouTube URL"
+    );
   }
-  if (imageUrl && !validator.isURL(imageUrl, { require_protocol: true })) {
-    throw new Error("Image URL must be a valid URL with http/https");
+  if (imageUrlFromPayload) {
+    throw new Error("Team photo URL is not allowed. Please upload photo file.");
   }
 
   return {
@@ -47,8 +74,38 @@ const normalizeTeamMemberInput = (payload = {}, { requireName = false } = {}) =>
     role,
     description,
     profileLink,
-    imageUrl,
+    imageUrl: "",
     displayOrder,
+    isActive,
+  };
+};
+
+const normalizeAboutProjectInput = (payload = {}) => {
+  const badgeTitle = String(payload.badgeTitle || "About Project").trim();
+  const headline = String(payload.headline || "").trim();
+  const subheadline = String(payload.subheadline || "").trim();
+  const description = String(payload.description || "").trim();
+  const imageUrl = String(payload.imageUrl || "").trim();
+  const isActive = parseBoolean(payload.isActive, true);
+
+  const rawHighlights = Array.isArray(payload.highlights)
+    ? payload.highlights
+    : String(payload.highlights || "")
+        .split(/\r?\n|,/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+  if (imageUrl && !validator.isURL(imageUrl, { require_protocol: true })) {
+    throw new Error("About image URL must be a valid URL with http/https");
+  }
+
+  return {
+    badgeTitle,
+    headline,
+    subheadline,
+    description,
+    highlights: rawHighlights.slice(0, 8),
+    imageUrl,
     isActive,
   };
 };
@@ -65,6 +122,21 @@ const defaultMarketingPayload = () => ({
   },
   gallery: [],
   teamMembers: [],
+  aboutProject: {
+    badgeTitle: "About Project",
+    headline: "We Help You Build Technical Mastery",
+    subheadline: "A practical learning platform for developers and engineers",
+    description:
+      "We provide a modern technical learning platform focused on practical skills, project execution, and mentor-guided growth.",
+    highlights: [
+      "Project-Based Learning",
+      "Industry Mentors",
+      "Career-Focused Paths",
+      "Lifetime Access",
+    ],
+    imageUrl: "",
+    isActive: true,
+  },
 });
 
 const normalizeMarketingPayload = (doc) => {
@@ -107,6 +179,17 @@ const normalizeMarketingPayload = (doc) => {
           }))
           .sort((a, b) => a.displayOrder - b.displayOrder)
       : [],
+    aboutProject: {
+      badgeTitle: source.aboutProject?.badgeTitle || "About Project",
+      headline: source.aboutProject?.headline || "",
+      subheadline: source.aboutProject?.subheadline || "",
+      description: source.aboutProject?.description || "",
+      highlights: Array.isArray(source.aboutProject?.highlights)
+        ? source.aboutProject.highlights.map((item) => String(item || "").trim()).filter(Boolean)
+        : [],
+      imageUrl: source.aboutProject?.imageUrl || "",
+      isActive: source.aboutProject?.isActive !== false,
+    },
     updatedAt: source.updatedAt || null,
     updatedBy: source.updatedBy || null,
   };
@@ -174,7 +257,10 @@ export const updateMarketingContent = async (req, res) => {
     if (req.file?.path) {
       const uploadedUrl = await uploadOnCloudinary(req.file.path);
       if (!uploadedUrl) {
-        return res.status(400).json({ message: "Offer image upload failed" });
+        return res.status(400).json({
+          message: "Offer image upload failed",
+          hint: "Check Cloudinary credentials/config on server and retry",
+        });
       }
       content.currentOffer.imageUrl = uploadedUrl;
     }
@@ -203,7 +289,10 @@ export const addGalleryItem = async (req, res) => {
     const content = await getOrCreateMarketingContent();
     const uploadedUrl = await uploadOnCloudinary(req.file.path);
     if (!uploadedUrl) {
-      return res.status(400).json({ message: "Gallery image upload failed" });
+      return res.status(400).json({
+        message: "Gallery image upload failed",
+        hint: "Check Cloudinary credentials/config on server and retry",
+      });
     }
 
     if (content.gallery.length >= 30) {
@@ -304,6 +393,14 @@ export const addTeamMember = async (req, res) => {
       return res.status(400).json({ message: error.message || "Invalid team member data" });
     }
 
+    if (req.file?.path) {
+      const uploadedUrl = await uploadOnCloudinary(req.file.path);
+      if (!uploadedUrl) {
+        return res.status(400).json({ message: "Team photo upload failed" });
+      }
+      memberPayload.imageUrl = uploadedUrl;
+    }
+
     content.teamMembers.push(memberPayload);
     content.updatedBy = req.userId || null;
     await content.save();
@@ -337,21 +434,29 @@ export const updateTeamMember = async (req, res) => {
     if (source.name !== undefined && !String(source.name || "").trim()) {
       return res.status(400).json({ message: "Team member name is required" });
     }
+    if (source.imageUrl !== undefined && String(source.imageUrl || "").trim()) {
+      return res.status(400).json({
+        message: "Team photo URL is not allowed. Please upload photo file.",
+      });
+    }
 
     if (source.profileLink !== undefined) {
       const profileLink = String(source.profileLink || "").trim();
-      if (profileLink && !validator.isURL(profileLink, { require_protocol: true })) {
-        return res.status(400).json({ message: "Profile link must be a valid URL with http/https" });
+      if (profileLink && !isAllowedProfileLink(profileLink)) {
+        return res.status(400).json({
+          message:
+            "Profile link must be a valid LinkedIn/GitHub/X/Instagram/Facebook/YouTube URL",
+        });
       }
       member.profileLink = profileLink;
     }
 
-    if (source.imageUrl !== undefined) {
-      const imageUrl = String(source.imageUrl || "").trim();
-      if (imageUrl && !validator.isURL(imageUrl, { require_protocol: true })) {
-        return res.status(400).json({ message: "Image URL must be a valid URL with http/https" });
+    if (req.file?.path) {
+      const uploadedUrl = await uploadOnCloudinary(req.file.path);
+      if (!uploadedUrl) {
+        return res.status(400).json({ message: "Team photo upload failed" });
       }
-      member.imageUrl = imageUrl;
+      member.imageUrl = uploadedUrl;
     }
 
     if (source.name !== undefined) member.name = String(source.name || "").trim();
@@ -405,6 +510,33 @@ export const deleteTeamMember = async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       message: "Failed to delete team member",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+export const updateAboutProject = async (req, res) => {
+  try {
+    const content = await getOrCreateMarketingContent();
+    let payload;
+
+    try {
+      payload = normalizeAboutProjectInput(req.body || {});
+    } catch (error) {
+      return res.status(400).json({ message: error.message || "Invalid about project data" });
+    }
+
+    content.aboutProject = payload;
+    content.updatedBy = req.userId || null;
+    await content.save();
+
+    return res.status(200).json({
+      message: "About project updated successfully",
+      content: normalizeMarketingPayload(content),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Failed to update about project",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
