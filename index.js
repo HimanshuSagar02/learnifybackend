@@ -106,7 +106,8 @@ app.use(cors({
                 debugLog(`[CORS] ⚠️ FRONTEND_URL not set - allowing origin anyway (temporary)`);
                 callback(null, true);
             } else {
-                callback(new Error(`Not allowed by CORS. Origin: ${origin}`));
+                // Return a CORS rejection instead of bubbling to generic 500 handler.
+                callback(null, false);
             }
         }
     },
@@ -287,6 +288,13 @@ app.use((err, req, res, next) => {
 
 // Error handling middleware (should be after all routes)
 app.use((err, req, res, next) => {
+  if (String(err?.message || "").includes("Not allowed by CORS")) {
+    return res.status(403).json({
+      message: "CORS blocked for this origin",
+      origin: req.headers.origin || null,
+    });
+  }
+
   console.error("❌ Error:", err);
   res.status(500).json({
     message: "Internal server error",
@@ -327,15 +335,48 @@ app.listen(port, async ()=>{
             console.log("      ⚠️  WARNING: LIVEKIT_API_SECRET is missing! LiveKit will not work.");
         }
     }
-    console.log("   📧 Email Config:", 
-        (process.env.EMAIL && process.env.EMAIL_PASS) 
-        ? "✅ Set" : "❌ Missing (Forgot Password will not work)"
+    const hasSendGridConfig =
+      Boolean(
+        String(
+          process.env.SEND_GRID_API_KEY || process.env.SENDGRID_API_KEY || ""
+        ).trim()
+      ) &&
+      Boolean(
+        String(
+            process.env.EMAIL ||
+            ""
+        ).trim()
+      );
+    const hasSmtpConfig =
+      Boolean(String(process.env.EMAIL || "").trim()) &&
+      Boolean(String(process.env.EMAIL_PASS || "").trim());
+    const activeEmailProvider = hasSendGridConfig
+      ? "SendGrid"
+      : hasSmtpConfig
+        ? "SMTP"
+        : "None";
+
+    console.log(
+      "   📧 Email Config:",
+      activeEmailProvider !== "None"
+        ? `✅ Set (${activeEmailProvider})`
+        : "❌ Missing (Forgot Password will not work)"
     );
-    if (process.env.EMAIL) {
-        console.log("      Email:", process.env.EMAIL);
-        if (!process.env.EMAIL_PASS) {
-            console.log("      ⚠️  WARNING: EMAIL_PASS is missing! Email sending will not work.");
-        }
+
+    if (activeEmailProvider === "SendGrid") {
+      console.log(
+        "      Sender:",
+        process.env.EMAIL || process.env.EMAIL_FROM
+      );
+    } else if (activeEmailProvider === "SMTP") {
+      console.log("      Email:", process.env.EMAIL);
+      if (!process.env.EMAIL_PASS) {
+        console.log("      ⚠️  WARNING: EMAIL_PASS is missing! Email sending will not work.");
+      }
+    } else {
+      console.log(
+        "      Configure SEND_GRID_API_KEY (recommended) or EMAIL + EMAIL_PASS."
+      );
     }
     
     console.log("\n🔌 Database Connection:");
@@ -363,4 +404,5 @@ process.on("uncaughtException", (err)=> {
 process.on("unhandledRejection", (err)=> {
   console.log("❗ Unhandled Rejection:", err);
 });
+
 

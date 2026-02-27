@@ -5,7 +5,7 @@ import bcrypt from "bcryptjs"
 import User from "../models/userModel.js"
 import mongoose from "mongoose"
 
-import sendMail from "../configs/Mail.js"
+import sendMail, { getMailProvider, isMailConfigured } from "../configs/Mail.js"
 
 const isDevelopment = process.env.NODE_ENV !== "production";
 const debugLog = (...args) => {
@@ -421,37 +421,35 @@ export const sendOtp = async (req,res) => {
         console.log(`[SendOTP] OTP saved for user: ${user.email}, OTP: ${otp}`);
         
         // Check email configuration BEFORE attempting to send
-        const hasEmailConfig = Boolean(
-            String(process.env.EMAIL || "").trim() &&
-            String(process.env.EMAIL_PASS || "").trim()
-        );
-        if (!hasEmailConfig) {
-            console.error("[SendOTP] Email configuration missing - EMAIL or EMAIL_PASS not set");
-            console.error("[SendOTP] EMAIL:", String(process.env.EMAIL || "").trim() ? "Set" : "Missing");
-            console.error("[SendOTP] EMAIL_PASS:", String(process.env.EMAIL_PASS || "").trim() ? "Set" : "Missing");
+        const activeMailProvider = getMailProvider();
+        if (!isMailConfigured) {
+            console.error("[SendOTP] Email configuration missing");
+            console.error("[SendOTP] Required: SEND_GRID_API_KEY (uses EMAIL as sender)");
+            console.error("[SendOTP] Alternative: EMAIL + EMAIL_PASS");
             
             // In development mode, return OTP in response so user can test
             const isDevelopment = !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
             
             if (isDevelopment) {
                 console.log(`\n🔑 [SendOTP] DEVELOPMENT MODE - OTP for ${normalizedEmail}: ${otp}`);
-                console.log(`[SendOTP] In production, configure EMAIL and EMAIL_PASS to send emails\n`);
+                console.log(`[SendOTP] In production, configure SendGrid or SMTP credentials\n`);
                 
                 return res.status(200).json({
                     message: `OTP generated successfully. In development mode, OTP is: ${otp}`,
                     otp: otp,
-                    hint: "Configure EMAIL and EMAIL_PASS in .env to send emails in production"
+                    hint: "Set SEND_GRID_API_KEY (uses EMAIL as sender), or EMAIL + EMAIL_PASS",
+                    mailProvider: activeMailProvider
                 });
             }
             
             return res.status(500).json({
                 message: "Email service is not configured. Please contact administrator.",
-                hint: "EMAIL and EMAIL_PASS environment variables are required"
+                hint: "Set SEND_GRID_API_KEY (uses EMAIL as sender), or EMAIL + EMAIL_PASS"
             });
         }
         
         try {
-            console.log(`[SendOTP] Attempting to send email to: ${normalizedEmail}`);
+            console.log(`[SendOTP] Attempting to send email via ${activeMailProvider} to: ${normalizedEmail}`);
             await sendMail(normalizedEmail, otp)
             console.log(`[SendOTP] Email sent successfully to: ${normalizedEmail}`);
             return res.status(200).json({
@@ -476,13 +474,13 @@ export const sendOtp = async (req,res) => {
                     message: `Email sending failed, but OTP generated. In development mode, OTP is: ${otp}`,
                     otp: otp,
                     error: mailError.message,
-                    hint: "Configure EMAIL and EMAIL_PASS correctly to send emails"
+                    hint: "Check SEND_GRID_API_KEY or EMAIL/EMAIL_PASS"
                 });
             }
             
             return res.status(500).json({
                 message: mailError?.message || "Failed to send email. Please check your email configuration.",
-                hint: "Set EMAIL/EMAIL_PASS (or SMTP_USER/SMTP_PASS) in backend environment and redeploy."
+                hint: "Set SEND_GRID_API_KEY (uses EMAIL as sender), or EMAIL/EMAIL_PASS."
             });
         }
     } catch (error) {
