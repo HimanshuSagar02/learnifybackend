@@ -1,7 +1,13 @@
 import express from "express";
 import isAuth from "../middlewares/isAuth.js";
 import isAdmin from "../middlewares/isAdmin.js";
-import { createUserByAdmin, listUsers, updateUserStatus, updateUserPassword } from "../controllers/adminUserController.js";
+import {
+  createUserByAdmin,
+  listUsers,
+  updateUserStatus,
+  updateUserPassword,
+  deleteUserByAdmin,
+} from "../controllers/adminUserController.js";
 import { getPortalStats, getActivities, getProblems } from "../controllers/adminPortalController.js";
 
 const router = express.Router();
@@ -14,6 +20,7 @@ router.get("/users", isAuth, isAdmin, listUsers);
 router.post("/users", isAuth, isAdmin, createUserByAdmin);
 router.patch("/users/:userId/status", isAuth, isAdmin, updateUserStatus);
 router.patch("/users/:userId/password", isAuth, isAdmin, updateUserPassword);
+router.delete("/users/:userId", isAuth, isAdmin, deleteUserByAdmin);
 
 // Portal management routes - Apply middlewares directly to each route
 router.get("/portal/stats", isAuth, isAdmin, async (req, res) => {
@@ -74,6 +81,7 @@ router.get("/routes", isAuth, isAdmin, (req, res) => {
     "POST /api/admin/users",
     "PATCH /api/admin/users/:userId/status",
     "PATCH /api/admin/users/:userId/password",
+    "DELETE /api/admin/users/:userId",
     "GET /api/admin/portal/stats",
     "GET /api/admin/portal/activities",
     "GET /api/admin/portal/problems",
@@ -89,6 +97,7 @@ router.get("/routes", isAuth, isAdmin, (req, res) => {
 console.log("[AdminRoute] Admin routes registered successfully");
 console.log("[AdminRoute] Available routes:");
 console.log("  - GET /api/admin/users");
+console.log("  - DELETE /api/admin/users/:userId");
 console.log("  - GET /api/admin/portal/stats");
 console.log("  - GET /api/admin/portal/activities");
 console.log("  - GET /api/admin/portal/problems");

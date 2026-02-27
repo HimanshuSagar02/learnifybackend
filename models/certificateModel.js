@@ -19,8 +19,8 @@ const certificateSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Generate unique certificate ID before saving
-certificateSchema.pre("save", async function(next) {
+// Generate unique certificate ID before validation so `required: true` passes.
+certificateSchema.pre("validate", async function(next) {
   if (!this.certificateId) {
     let uniqueId;
     let isUnique = false;
@@ -33,7 +33,7 @@ certificateSchema.pre("save", async function(next) {
       uniqueId = `Learnify-${dateStr}-${randomStr}`;
       
       // Check if ID already exists
-      const existing = await mongoose.model("Certificate").findOne({ certificateId: uniqueId });
+      const existing = await this.constructor.findOne({ certificateId: uniqueId });
       if (!existing) {
         isUnique = true;
       }

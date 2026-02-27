@@ -1,5 +1,7 @@
 import bcrypt from "bcryptjs";
+import mongoose from "mongoose";
 import User from "../models/userModel.js";
+import Course from "../models/courseModel.js";
 
 export const createUserByAdmin = async (req, res) => {
   try {
@@ -79,14 +81,69 @@ export const listUsers = async (req, res) => {
       .select("-password -resetOtp -otpExpires -isOtpVerifed")
       .sort({ createdAt: -1 })
       .lean(); // Use lean() for better performance
-    
-    console.log(`[ListUsers] Found ${users.length} users`);
-    return res.status(200).json(users || []);
+
+    const usersWithCounts = (users || []).map((user) => ({
+      ...user,
+      enrolledCoursesCount: Array.isArray(user.enrolledCourses) ? user.enrolledCourses.length : 0,
+    }));
+
+    console.log(`[ListUsers] Found ${usersWithCounts.length} users`);
+    return res.status(200).json(usersWithCounts);
   } catch (error) {
     console.error("[ListUsers] Error:", error);
     return res.status(500).json({ 
       message: `List users failed: ${error.message || String(error)}` 
     });
+  }
+};
+
+export const deleteUserByAdmin = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
+    if (req.userId?.toString() === userId.toString()) {
+      return res.status(403).json({ message: "You cannot delete your own admin account" });
+    }
+
+    const user = await User.findById(userId).select("_id role name email");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (user.role === "educator") {
+      const createdCoursesCount = await Course.countDocuments({ creator: user._id });
+      if (createdCoursesCount > 0) {
+        return res.status(400).json({
+          message: "Cannot delete educator with published/created courses. Reassign or remove courses first.",
+          createdCoursesCount,
+        });
+      }
+    }
+
+    // Remove user from enrollment lists to avoid stale references.
+    await Course.updateMany(
+      { enrolledStudents: user._id },
+      { $pull: { enrolledStudents: user._id } }
+    );
+
+    await User.findByIdAndDelete(user._id);
+
+    return res.status(200).json({
+      message: "User deleted successfully",
+      deletedUser: {
+        _id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    console.error("[DeleteUserByAdmin] Error:", error);
+    return res.status(500).json({ message: `Delete user failed: ${error.message || String(error)}` });
   }
 };
 
