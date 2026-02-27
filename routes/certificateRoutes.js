@@ -54,23 +54,24 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
       return res.status(404).json({ message: "Course not found" });
     }
 
-    // Check if user is enrolled in the course
-    const isEnrolled = course.enrolledStudents?.some(
-      (id) => id.toString() === userId.toString()
-    );
-
-    if (!isEnrolled && user.role !== "admin") {
-      return res.status(403).json({ 
-        message: "You must be enrolled in the course to generate a certificate" 
-      });
-    }
-
-    // Check if certificate already exists
+    // Re-download should work even if enrollment arrays became inconsistent later.
     let certificate = await Certificate.findOne({ 
       userId, 
       courseId,
       isActive: true 
     });
+
+    const isEnrolledInCourse = Array.isArray(course.enrolledStudents) &&
+      course.enrolledStudents.some((id) => id?.toString?.() === userId.toString());
+    const isEnrolledInUser = Array.isArray(user.enrolledCourses) &&
+      user.enrolledCourses.some((id) => id?.toString?.() === courseId.toString());
+
+    // Enforce enrollment only when issuing a brand-new certificate.
+    if (!certificate && !isEnrolledInCourse && !isEnrolledInUser && user.role !== "admin") {
+      return res.status(403).json({
+        message: "You must be enrolled in the course to generate a certificate"
+      });
+    }
 
     if (!certificate) {
       // Create new certificate (certificateId will be auto-generated)
@@ -118,85 +119,177 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
       margin: 20,
     });
 
+    const safeStudentName = String(user.name || "student")
+      .replace(/[^a-zA-Z0-9._-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "") || "student";
+    const safeCourseName = String(course.title || "course")
+      .replace(/[^a-zA-Z0-9._-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^-|-$/g, "") || "course";
+
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename=${user.name.replace(/\s+/g, '-')}-${course.title.replace(/\s+/g, '-')}-certificate.pdf`);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${safeStudentName}-${safeCourseName}-certificate.pdf"`
+    );
     doc.pipe(res);
 
-    /* ---------- BORDER ---------- */
-    doc.rect(15, 15, doc.page.width - 30, doc.page.height - 30).lineWidth(3).stroke("#000");
-    doc.rect(35, 35, doc.page.width - 70, doc.page.height - 70).lineWidth(1).stroke("#000");
+    const pageWidth = doc.page.width;
+    const pageHeight = doc.page.height;
+    const colors = {
+      primary: "#3B82F6",
+      dark: "#0F172A",
+      text: "#111827",
+      muted: "#475569",
+      border: "#93C5FD",
+      lightBg: "#EFF6FF",
+    };
+    const issueDate = new Date(certificate.issuedOn).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+
+    /* ---------- PREMIUM FRAME ---------- */
+    doc.rect(0, 0, pageWidth, pageHeight).fill("#FFFFFF");
+    doc.rect(18, 18, pageWidth - 36, pageHeight - 36).lineWidth(2.2).stroke(colors.dark);
+    doc.rect(30, 30, pageWidth - 60, pageHeight - 60).lineWidth(1.2).stroke(colors.border);
+
+    /* ---------- HEADER BAR ---------- */
+    const innerX = 30;
+    const innerY = 30;
+    const innerW = pageWidth - 60;
+    doc.rect(innerX, innerY, innerW, 72).fill(colors.dark);
+
+    doc.font("Helvetica-Bold")
+      .fontSize(12)
+      .fillColor("#FFFFFF")
+      .text("LEARNIFY", innerX + 28, innerY + 22, { characterSpacing: 2 });
+
+    doc.font("Helvetica-Bold")
+      .fontSize(28)
+      .fillColor("#FFFFFF")
+      .text("CERTIFICATE OF COMPLETION", 0, innerY + 22, { align: "center" });
+
+    doc.font("Helvetica")
+      .fontSize(10)
+      .fillColor("#BFDBFE")
+      .text("Premium Professional Certification", 0, innerY + 52, { align: "center" });
 
     /* ---------- WATERMARK ---------- */
     doc.save();
     doc.font("Helvetica-Bold")
-       .fontSize(140)
-       .fillColor("#3B82F6")
-       .opacity(0.15)
-       .text("Learnify", doc.page.width / 2 - 250, doc.page.height / 2 - 110);
+      .fontSize(130)
+      .fillColor("#DBEAFE")
+      .opacity(0.16)
+      .text("LEARNIFY", pageWidth / 2 - 240, pageHeight / 2 - 70);
     doc.restore();
 
-    /* ---------- TITLE ---------- */
-    doc.font("Helvetica-Bold")
-       .fillColor("#000")
-       .fontSize(42)
-       .text("CERTIFICATE OF COMPLETION", 0, 80, { align: "center" });
-
-    /* ---------- MAIN BODY ---------- */
-    doc.fontSize(18).fillColor("#000").text("This certifies that", 0, 165, { align: "center" });
+    /* ---------- BODY ---------- */
+    doc.font("Helvetica")
+      .fontSize(16)
+      .fillColor(colors.muted)
+      .text("This certificate is proudly presented to", 0, 142, { align: "center" });
 
     doc.font("Helvetica-Bold")
-       .fontSize(34)
-       .fillColor("#000")
-       .text(user.name.toUpperCase(), 0, 210, { align: "center" });
+      .fontSize(44)
+      .fillColor(colors.text)
+      .text(String(user.name || "").toUpperCase(), 74, 175, {
+        align: "center",
+        width: pageWidth - 148,
+      });
+
+    doc.moveTo(pageWidth / 2 - 210, 236)
+      .lineTo(pageWidth / 2 + 210, 236)
+      .lineWidth(1)
+      .strokeColor("#CBD5E1")
+      .stroke();
 
     doc.font("Helvetica")
-       .fontSize(18)
-       .fillColor("#000")
-       .text("has successfully completed the course", 0, 260, { align: "center" });
+      .fontSize(16)
+      .fillColor(colors.muted)
+      .text("for successfully completing the professional course", 0, 250, { align: "center" });
 
     doc.font("Helvetica-Bold")
-       .fontSize(28)
-       .fillColor("#000")
-       .text(course.title, 0, 300, { align: "center" });
+      .fontSize(30)
+      .fillColor(colors.primary)
+      .text(course.title, 90, 281, {
+        align: "center",
+        width: pageWidth - 180,
+      });
 
-    /* ---------- DATE & CERTIFICATE ID ---------- */
-    doc.fontSize(14).fillColor("#000")
-       .text(`Certificate ID: ${certificate.certificateId}`, 0, 350, { align: "center" });
+    /* ---------- CERTIFICATE META ---------- */
+    const metaX = pageWidth / 2 - 190;
+    const metaY = 350;
+    const metaW = 380;
+    const metaH = 60;
+    doc.roundedRect(metaX, metaY, metaW, metaH, 9).fillAndStroke(colors.lightBg, "#BFDBFE");
 
-    doc.fontSize(14)
-       .text(`Issued On: ${new Date(certificate.issuedOn).toLocaleDateString('en-US', { 
-         year: 'numeric', 
-         month: 'long', 
-         day: 'numeric' 
-       })}`, 0, 375, { align: "center" });
+    doc.font("Helvetica-Bold")
+      .fontSize(10)
+      .fillColor("#1E3A8A")
+      .text("CERTIFICATE ID", metaX + 16, metaY + 14);
 
-    /* ---------- QR CODE ---------- */
-    const qrSize = 120;
-    const qrX = 70;
-    const qrY = doc.page.height - qrSize - 70;
-    
-    // Convert base64 QR code to buffer
-    const qrBuffer = Buffer.from(qrData.split(',')[1], 'base64');
+    doc.font("Helvetica-Bold")
+      .fontSize(13)
+      .fillColor(colors.dark)
+      .text(certificate.certificateId, metaX + 16, metaY + 30);
+
+    doc.font("Helvetica-Bold")
+      .fontSize(10)
+      .fillColor("#1E3A8A")
+      .text("ISSUE DATE", metaX + 235, metaY + 14);
+
+    doc.font("Helvetica-Bold")
+      .fontSize(12)
+      .fillColor(colors.dark)
+      .text(issueDate, metaX + 235, metaY + 30);
+
+    /* ---------- QR BLOCK ---------- */
+    const qrSize = 92;
+    const qrX = 76;
+    const qrY = pageHeight - qrSize - 76;
+    const qrBuffer = Buffer.from(qrData.split(",")[1], "base64");
+
+    doc.roundedRect(qrX - 12, qrY - 12, qrSize + 24, qrSize + 24, 10)
+      .fillAndStroke("#FFFFFF", "#CBD5E1");
     doc.image(qrBuffer, qrX, qrY, { width: qrSize, height: qrSize });
-    doc.fontSize(12).fillColor("#000").text("Scan to Verify", qrX + 22, doc.page.height - 50);
+    doc.font("Helvetica-Bold")
+      .fontSize(10)
+      .fillColor(colors.dark)
+      .text("SCAN TO VERIFY", qrX - 2, qrY + qrSize + 18, { width: qrSize + 8, align: "center" });
 
-    /* ---------- SIGNATURE LINE ---------- */
-    const signY = doc.page.height - 150;
-    doc.moveTo(doc.page.width / 2 - 120, signY)
-       .lineTo(doc.page.width / 2 + 120, signY)
-       .stroke();
+    /* ---------- SIGNATURE ---------- */
+    const signX = pageWidth - 290;
+    const signY = pageHeight - 150;
 
-    doc.fontSize(14).fillColor("#000").text("Authorized Signature", 0, signY + 10, { align: "center" });
-    
-    if (course.creator) {
-      doc.fontSize(12).fillColor("#666").text(course.creator.name || "Course Creator", 0, signY + 30, { align: "center" });
-    }
+    doc.moveTo(signX, signY).lineTo(signX + 215, signY).lineWidth(1).strokeColor("#94A3B8").stroke();
+
+    // Built-in cursive-like style using italic font for a clean signature look.
+    doc.font("Times-Italic")
+      .fontSize(28)
+      .fillColor(colors.dark)
+      .text("Himanshu Sagar", signX, signY - 36, { width: 215, align: "center" });
+
+    doc.font("Helvetica")
+      .fontSize(10)
+      .fillColor(colors.muted)
+      .text("Authorized Signatory", signX, signY + 9, { width: 215, align: "center" });
+
+    doc.font("Helvetica-Bold")
+      .fontSize(10)
+      .fillColor(colors.primary)
+      .text("Learnify", signX, signY + 24, { width: 215, align: "center" });
 
     /* ---------- FOOTER ---------- */
-    doc.fontSize(10).fillColor("#666")
-       .text("Learnify", 0, doc.page.height - 35, { align: "center" });
-    doc.fontSize(8).fillColor("#999")
-       .text(`Verify at: ${verifyUrl}`, 0, doc.page.height - 25, { align: "center" });
+    doc.font("Helvetica")
+      .fontSize(8.5)
+      .fillColor("#64748B")
+      .text(`Verification URL: ${verifyUrl}`, 60, pageHeight - 40, {
+        width: pageWidth - 120,
+        align: "center",
+      });
 
     doc.end();
 
