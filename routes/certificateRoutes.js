@@ -11,6 +11,16 @@ dotenv.config();
 
 const router = express.Router();
 
+const toPdfSafeText = (value, fallback = "") => {
+  const normalized = String(value ?? "")
+    .normalize("NFKD")
+    .replace(/[^\x20-\x7E]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return normalized || fallback;
+};
+
 // Get frontend URL from environment variable
 // In production, FRONTEND_URL should be set (e.g., https://yourdomain.com)
 // In development, it can fallback to localhost
@@ -103,14 +113,27 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
     const verifyUrl = `${frontendUrl}/certificate/verify/${certificate.certificateId}`;
     console.log(`[Certificate] Verification URL: ${verifyUrl}`);
     
-    // Generate QR Code with verification URL
-    const qrData = await QRCode.toDataURL(verifyUrl, {
-      errorCorrectionLevel: 'H',
-      type: 'image/png',
-      quality: 0.92,
-      margin: 1,
-      width: 300
-    });
+    const studentDisplayName = toPdfSafeText(user.name, "Student");
+    const courseDisplayTitle = toPdfSafeText(course.title, "Course");
+    const creatorDisplayName = toPdfSafeText(course.creator?.name, "Course Creator");
+
+    // Generate QR Code with verification URL (fallback-safe)
+    let qrBuffer = null;
+    try {
+      const qrData = await QRCode.toDataURL(verifyUrl, {
+        errorCorrectionLevel: "H",
+        type: "image/png",
+        quality: 0.92,
+        margin: 1,
+        width: 300
+      });
+      const base64Payload = String(qrData || "").split(",")[1];
+      if (base64Payload) {
+        qrBuffer = Buffer.from(base64Payload, "base64");
+      }
+    } catch (qrError) {
+      console.warn("[Certificate] QR generation skipped:", qrError?.message || qrError);
+    }
 
     /* ---------- PDF CONFIG ---------- */
     const doc = new PDFDocument({
@@ -119,11 +142,11 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
       margin: 20,
     });
 
-    const safeStudentName = String(user.name || "student")
+    const safeStudentName = String(studentDisplayName || "student")
       .replace(/[^a-zA-Z0-9._-]+/g, "-")
       .replace(/-+/g, "-")
       .replace(/^-|-$/g, "") || "student";
-    const safeCourseName = String(course.title || "course")
+    const safeCourseName = String(courseDisplayTitle || "course")
       .replace(/[^a-zA-Z0-9._-]+/g, "-")
       .replace(/-+/g, "-")
       .replace(/^-|-$/g, "") || "course";
@@ -195,7 +218,7 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
     doc.font("Helvetica-Bold")
       .fontSize(44)
       .fillColor(colors.text)
-      .text(String(user.name || "").toUpperCase(), 74, 175, {
+      .text(studentDisplayName.toUpperCase(), 74, 175, {
         align: "center",
         width: pageWidth - 148,
       });
@@ -214,7 +237,7 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
     doc.font("Helvetica-Bold")
       .fontSize(30)
       .fillColor(colors.primary)
-      .text(course.title, 90, 281, {
+      .text(courseDisplayTitle, 90, 281, {
         align: "center",
         width: pageWidth - 180,
       });
@@ -250,15 +273,21 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
     const qrSize = 92;
     const qrX = 76;
     const qrY = pageHeight - qrSize - 76;
-    const qrBuffer = Buffer.from(qrData.split(",")[1], "base64");
-
-    doc.roundedRect(qrX - 12, qrY - 12, qrSize + 24, qrSize + 24, 10)
-      .fillAndStroke("#FFFFFF", "#CBD5E1");
-    doc.image(qrBuffer, qrX, qrY, { width: qrSize, height: qrSize });
-    doc.font("Helvetica-Bold")
-      .fontSize(10)
-      .fillColor(colors.dark)
-      .text("SCAN TO VERIFY", qrX - 2, qrY + qrSize + 18, { width: qrSize + 8, align: "center" });
+    if (qrBuffer) {
+      doc.roundedRect(qrX - 12, qrY - 12, qrSize + 24, qrSize + 24, 10)
+        .fillAndStroke("#FFFFFF", "#CBD5E1");
+      doc.image(qrBuffer, qrX, qrY, { width: qrSize, height: qrSize });
+      doc.font("Helvetica-Bold")
+        .fontSize(10)
+        .fillColor(colors.dark)
+        .text("SCAN TO VERIFY", qrX - 2, qrY + qrSize + 18, { width: qrSize + 8, align: "center" });
+    } else {
+      doc.roundedRect(qrX - 12, qrY - 2, qrSize + 24, 40, 8).fillAndStroke("#FFFFFF", "#CBD5E1");
+      doc.font("Helvetica-Bold")
+        .fontSize(10)
+        .fillColor(colors.dark)
+        .text("VERIFY ONLINE", qrX - 2, qrY + 12, { width: qrSize + 8, align: "center" });
+    }
 
     /* ---------- SIGNATURE ---------- */
     const signX = pageWidth - 290;
@@ -267,10 +296,17 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
     doc.moveTo(signX, signY).lineTo(signX + 215, signY).lineWidth(1).strokeColor("#94A3B8").stroke();
 
     // Built-in cursive-like style using italic font for a clean signature look.
-    doc.font("Times-Italic")
-      .fontSize(28)
-      .fillColor(colors.dark)
-      .text("Himanshu Sagar", signX, signY - 36, { width: 215, align: "center" });
+    try {
+      doc.font("Times-Italic")
+        .fontSize(28)
+        .fillColor(colors.dark)
+        .text("Himanshu Sagar", signX, signY - 36, { width: 215, align: "center" });
+    } catch {
+      doc.font("Helvetica-Oblique")
+        .fontSize(24)
+        .fillColor(colors.dark)
+        .text("Himanshu Sagar", signX, signY - 30, { width: 215, align: "center" });
+    }
 
     doc.font("Helvetica")
       .fontSize(10)
@@ -281,6 +317,11 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
       .fontSize(10)
       .fillColor(colors.primary)
       .text("Learnify", signX, signY + 24, { width: 215, align: "center" });
+
+    doc.font("Helvetica")
+      .fontSize(8.5)
+      .fillColor("#64748B")
+      .text(creatorDisplayName, signX, signY + 38, { width: 215, align: "center" });
 
     /* ---------- FOOTER ---------- */
     doc.font("Helvetica")
