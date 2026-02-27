@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import validator from "validator";
 import uploadOnCloudinary, { getLastCloudinaryError } from "../configs/cloudinary.js";
+import connectDb from "../configs/db.js";
 import MarketingContent from "../models/marketingContentModel.js";
 import DemoBooking from "../models/demoBookingModel.js";
 import User from "../models/userModel.js";
@@ -209,10 +210,23 @@ const getOrCreateMarketingContent = async () => {
 export const getMarketingContent = async (req, res) => {
   try {
     if (mongoose.connection.readyState !== 1) {
-      return res.status(200).json(defaultMarketingPayload());
+      try {
+        await connectDb();
+      } catch (dbError) {
+        return res.status(503).json({
+          message: "Marketing service temporarily unavailable",
+          error: process.env.NODE_ENV === "development" ? dbError.message : undefined,
+        });
+      }
     }
 
-    const content = await MarketingContent.findOne({ key: DEFAULT_CONTENT_KEY }).lean();
+    if (mongoose.connection.readyState !== 1) {
+      return res.status(503).json({
+        message: "Marketing service temporarily unavailable",
+      });
+    }
+
+    const content = await getOrCreateMarketingContent();
     return res.status(200).json(normalizeMarketingPayload(content));
   } catch (error) {
     return res.status(500).json({

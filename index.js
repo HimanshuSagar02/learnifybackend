@@ -335,18 +335,19 @@ app.listen(port, async ()=>{
             console.log("      ⚠️  WARNING: LIVEKIT_API_SECRET is missing! LiveKit will not work.");
         }
     }
+    const sendGridSender = String(
+      process.env.SEND_GRID_FROM_EMAIL ||
+      process.env.EMAIL_FROM ||
+      process.env.EMAIL ||
+      ""
+    ).trim();
     const hasSendGridConfig =
       Boolean(
         String(
           process.env.SEND_GRID_API_KEY || process.env.SENDGRID_API_KEY || ""
         ).trim()
       ) &&
-      Boolean(
-        String(
-            process.env.EMAIL ||
-            ""
-        ).trim()
-      );
+      Boolean(sendGridSender);
     const hasSmtpConfig =
       Boolean(String(process.env.EMAIL || "").trim()) &&
       Boolean(String(process.env.EMAIL_PASS || "").trim());
@@ -366,7 +367,7 @@ app.listen(port, async ()=>{
     if (activeEmailProvider === "SendGrid") {
       console.log(
         "      Sender:",
-        process.env.EMAIL || process.env.EMAIL_FROM
+        sendGridSender
       );
     } else if (activeEmailProvider === "SMTP") {
       console.log("      Email:", process.env.EMAIL);

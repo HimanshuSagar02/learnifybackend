@@ -424,7 +424,7 @@ export const sendOtp = async (req,res) => {
         const activeMailProvider = getMailProvider();
         if (!isMailConfigured) {
             console.error("[SendOTP] Email configuration missing");
-            console.error("[SendOTP] Required: SEND_GRID_API_KEY (uses EMAIL as sender)");
+            console.error("[SendOTP] Required: SEND_GRID_API_KEY + SEND_GRID_FROM_EMAIL (or EMAIL_FROM/EMAIL)");
             console.error("[SendOTP] Alternative: EMAIL + EMAIL_PASS");
             
             // In development mode, return OTP in response so user can test
@@ -437,14 +437,14 @@ export const sendOtp = async (req,res) => {
                 return res.status(200).json({
                     message: `OTP generated successfully. In development mode, OTP is: ${otp}`,
                     otp: otp,
-                    hint: "Set SEND_GRID_API_KEY (uses EMAIL as sender), or EMAIL + EMAIL_PASS",
+                    hint: "Set SEND_GRID_API_KEY + SEND_GRID_FROM_EMAIL (or EMAIL_FROM/EMAIL), or EMAIL + EMAIL_PASS",
                     mailProvider: activeMailProvider
                 });
             }
             
             return res.status(500).json({
                 message: "Email service is not configured. Please contact administrator.",
-                hint: "Set SEND_GRID_API_KEY (uses EMAIL as sender), or EMAIL + EMAIL_PASS"
+                hint: "Set SEND_GRID_API_KEY + SEND_GRID_FROM_EMAIL (or EMAIL_FROM/EMAIL), or EMAIL + EMAIL_PASS"
             });
         }
         
@@ -474,13 +474,13 @@ export const sendOtp = async (req,res) => {
                     message: `Email sending failed, but OTP generated. In development mode, OTP is: ${otp}`,
                     otp: otp,
                     error: mailError.message,
-                    hint: "Check SEND_GRID_API_KEY or EMAIL/EMAIL_PASS"
+                    hint: "Check SEND_GRID_API_KEY + SEND_GRID_FROM_EMAIL (or EMAIL_FROM/EMAIL), or EMAIL/EMAIL_PASS"
                 });
             }
             
             return res.status(500).json({
                 message: mailError?.message || "Failed to send email. Please check your email configuration.",
-                hint: "Set SEND_GRID_API_KEY (uses EMAIL as sender), or EMAIL/EMAIL_PASS."
+                hint: "Set SEND_GRID_API_KEY + SEND_GRID_FROM_EMAIL (or EMAIL_FROM/EMAIL), or EMAIL/EMAIL_PASS."
             });
         }
     } catch (error) {

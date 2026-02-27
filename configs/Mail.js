@@ -31,14 +31,30 @@ const MAIL_TIMEOUT_MS = 15000;
 
 const isSendGridConfigured = Boolean(SEND_GRID_API_KEY && SEND_GRID_FROM_EMAIL);
 const isSmtpConfigured = Boolean(EMAIL && EMAIL_PASS);
-const activeMailProvider = isSendGridConfigured ? "sendgrid" : isSmtpConfigured ? "smtp" : "none";
+const preferredMailProvider = String(process.env.MAIL_PROVIDER || "auto")
+  .trim()
+  .toLowerCase();
+
+const resolveActiveProvider = () => {
+  if (preferredMailProvider === "smtp") {
+    return isSmtpConfigured ? "smtp" : "none";
+  }
+
+  if (preferredMailProvider === "sendgrid") {
+    return isSendGridConfigured ? "sendgrid" : "none";
+  }
+
+  return isSendGridConfigured ? "sendgrid" : isSmtpConfigured ? "smtp" : "none";
+};
+
+const activeMailProvider = resolveActiveProvider();
 
 export const isMailConfigured = activeMailProvider !== "none";
 export const getMailProvider = () => activeMailProvider;
 
 if (!isMailConfigured) {
   console.warn(
-    "Email provider not configured. Set SEND_GRID_API_KEY (+ EMAIL as sender) or EMAIL + EMAIL_PASS."
+    "Email provider not configured. Set SEND_GRID_API_KEY + SEND_GRID_FROM_EMAIL (or EMAIL_FROM/EMAIL) or EMAIL + EMAIL_PASS."
   );
 } else {
   console.log(`[Mail] Active provider: ${activeMailProvider}`);
@@ -119,6 +135,7 @@ const sendViaSendGrid = async (to, otp) => {
 
     const error = new Error(`SendGrid request failed (${response.status}). ${apiErrors}`.trim());
     error.code = "SENDGRID_API_ERROR";
+    error.httpStatus = response.status;
     throw error;
   }
 
@@ -155,6 +172,39 @@ const sendViaSmtp = async (to, otp) => {
   }
 };
 
+const normalizeProviderError = (error, provider) => {
+  if (
+    error.code === "ETIMEDOUT" ||
+    error.code === "ECONNABORTED" ||
+    /timeout/i.test(String(error.message || ""))
+  ) {
+    return new Error("Email service timed out. Please try again.");
+  }
+
+  if (
+    error.code === "ECONNECTION" ||
+    error.code === "ESOCKET" ||
+    error.code === "ENOTFOUND"
+  ) {
+    return new Error("Unable to connect to email service. Please try again later.");
+  }
+
+  if (provider === "smtp" && error.code === "EAUTH") {
+    return new Error("SMTP authentication failed. Check EMAIL and EMAIL_PASS.");
+  }
+
+  if (provider === "sendgrid" && error.code === "SENDGRID_API_ERROR") {
+    if ([401, 403].includes(Number(error.httpStatus || 0))) {
+      return new Error(
+        "SendGrid rejected request (401/403). Check SEND_GRID_API_KEY and verified sender email."
+      );
+    }
+    return new Error(`SendGrid email failed. ${error.message}`);
+  }
+
+  return error;
+};
+
 const sendMail = async (to, otp) => {
   if (!isMailConfigured) {
     throw new Error("Email configuration missing. Set SEND_GRID_API_KEY or EMAIL + EMAIL_PASS.");
@@ -162,41 +212,24 @@ const sendMail = async (to, otp) => {
 
   try {
     if (activeMailProvider === "sendgrid") {
-      return await sendViaSendGrid(to, otp);
+      try {
+        return await sendViaSendGrid(to, otp);
+      } catch (sendGridError) {
+        // In auto mode, fallback to SMTP when SendGrid credentials/sender are broken.
+        if (preferredMailProvider !== "sendgrid" && isSmtpConfigured) {
+          console.warn(
+            `[Mail] SendGrid failed (${sendGridError.message}). Falling back to SMTP.`
+          );
+          return await sendViaSmtp(to, otp);
+        }
+        throw sendGridError;
+      }
     }
 
     return await sendViaSmtp(to, otp);
   } catch (error) {
     console.error("Error sending email:", error.message);
-
-    if (activeMailProvider === "smtp" && error.code === "EAUTH") {
-      throw new Error("SMTP authentication failed. Check EMAIL and EMAIL_PASS.");
-    }
-
-    if (
-      error.code === "ETIMEDOUT" ||
-      error.code === "ECONNABORTED" ||
-      /timeout/i.test(String(error.message || ""))
-    ) {
-      throw new Error("Email service timed out. Please try again.");
-    }
-
-    if (
-      error.code === "ECONNECTION" ||
-      error.code === "ESOCKET" ||
-      error.code === "ENOTFOUND"
-    ) {
-      throw new Error("Unable to connect to email service. Please try again later.");
-    }
-
-    if (activeMailProvider === "sendgrid" && error.code === "SENDGRID_API_ERROR") {
-      if (/401|403/.test(String(error.message || ""))) {
-        throw new Error("SendGrid authentication failed. Check SEND_GRID_API_KEY.");
-      }
-      throw new Error(`SendGrid email failed. ${error.message}`);
-    }
-
-    throw error;
+    throw normalizeProviderError(error, activeMailProvider);
   }
 };
 
