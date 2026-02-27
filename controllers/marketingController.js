@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 import validator from "validator";
-import uploadOnCloudinary from "../configs/cloudinary.js";
+import uploadOnCloudinary, { getLastCloudinaryError } from "../configs/cloudinary.js";
 import MarketingContent from "../models/marketingContentModel.js";
 import DemoBooking from "../models/demoBookingModel.js";
 import User from "../models/userModel.js";
@@ -257,8 +257,10 @@ export const updateMarketingContent = async (req, res) => {
     if (req.file?.path) {
       const uploadedUrl = await uploadOnCloudinary(req.file.path);
       if (!uploadedUrl) {
+        const reason = getLastCloudinaryError() || "Unknown image upload error";
         return res.status(400).json({
           message: "Offer image upload failed",
+          error: reason,
           hint: "Check Cloudinary credentials/config on server and retry",
         });
       }
@@ -289,8 +291,10 @@ export const addGalleryItem = async (req, res) => {
     const content = await getOrCreateMarketingContent();
     const uploadedUrl = await uploadOnCloudinary(req.file.path);
     if (!uploadedUrl) {
+      const reason = getLastCloudinaryError() || "Unknown image upload error";
       return res.status(400).json({
         message: "Gallery image upload failed",
+        error: reason,
         hint: "Check Cloudinary credentials/config on server and retry",
       });
     }

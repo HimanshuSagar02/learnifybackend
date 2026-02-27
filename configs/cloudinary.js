@@ -23,6 +23,7 @@ const getMissingConfigKeys = () => {
 };
 
 let configuredSignature = "";
+let lastCloudinaryError = "";
 
 const ensureCloudinaryConfigured = () => {
   const missing = getMissingConfigKeys();
@@ -57,17 +58,21 @@ const cleanupLocalFile = (filePath) => {
 };
 
 const uploadOnCloudinary = async (filePath) => {
+  lastCloudinaryError = "";
   if (!filePath) {
     console.warn("[Cloudinary] No file path provided");
+    lastCloudinaryError = "No file path provided";
     return null;
   }
 
   if (!fs.existsSync(filePath)) {
     console.error(`[Cloudinary] File not found: ${filePath}`);
+    lastCloudinaryError = "Uploaded file not found on server";
     return null;
   }
 
   if (!ensureCloudinaryConfigured()) {
+    lastCloudinaryError = `Missing config: ${getMissingConfigKeys().join(", ")}`;
     cleanupLocalFile(filePath);
     return null;
   }
@@ -81,8 +86,10 @@ const uploadOnCloudinary = async (filePath) => {
     return uploadResult?.secure_url || null;
   } catch (error) {
     cleanupLocalFile(filePath);
+    const errMsg = error?.error?.message || error?.message || "Unknown Cloudinary upload error";
+    lastCloudinaryError = errMsg;
     console.error("[Cloudinary] Upload failed:", {
-      message: error?.message,
+      message: errMsg,
       http_code: error?.http_code,
       name: error?.name,
     });
@@ -114,5 +121,7 @@ export const testCloudinary = async () => {
     };
   }
 };
+
+export const getLastCloudinaryError = () => lastCloudinaryError;
 
 export default uploadOnCloudinary;
