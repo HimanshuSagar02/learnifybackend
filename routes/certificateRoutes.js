@@ -141,6 +141,12 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
       size: "A4",
       margin: 20,
     });
+    const pdfChunks = [];
+    doc.on("data", (chunk) => pdfChunks.push(chunk));
+    const pdfReady = new Promise((resolve, reject) => {
+      doc.on("end", () => resolve(Buffer.concat(pdfChunks)));
+      doc.on("error", reject);
+    });
 
     const safeStudentName = String(studentDisplayName || "student")
       .replace(/[^a-zA-Z0-9._-]+/g, "-")
@@ -150,13 +156,6 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
       .replace(/[^a-zA-Z0-9._-]+/g, "-")
       .replace(/-+/g, "-")
       .replace(/^-|-$/g, "") || "course";
-
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="${safeStudentName}-${safeCourseName}-certificate.pdf"`
-    );
-    doc.pipe(res);
 
     const pageWidth = doc.page.width;
     const pageHeight = doc.page.height;
@@ -333,15 +332,26 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
       });
 
     doc.end();
+    const pdfBuffer = await pdfReady;
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${safeStudentName}-${safeCourseName}-certificate.pdf"`
+    );
+    res.status(200).send(pdfBuffer);
 
     console.log(`[Certificate] PDF generated successfully for certificate: ${certificate.certificateId}`);
 
   } catch (err) {
     console.error("[Certificate] Generate error:", err);
-    res.status(500).json({ 
-      message: "Failed to generate certificate", 
-      error: process.env.NODE_ENV === "development" ? err.message : "Internal server error" 
-    });
+    if (!res.headersSent) {
+      return res.status(500).json({
+        message: "Failed to generate certificate",
+        error: err?.message || "Internal server error",
+      });
+    }
+    return res.end();
   }
 });
 
