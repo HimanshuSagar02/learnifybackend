@@ -21,6 +21,38 @@ const parseBoolean = (value, fallback = false) => {
   return fallback;
 };
 
+const normalizeTeamMemberInput = (payload = {}, { requireName = false } = {}) => {
+  const name = String(payload.name || "").trim();
+  const role = String(payload.role || "").trim();
+  const description = String(payload.description || "").trim();
+  const profileLink = String(payload.profileLink || "").trim();
+  const imageUrl = String(payload.imageUrl || "").trim();
+  const displayOrder = Number.isFinite(Number(payload.displayOrder))
+    ? Number(payload.displayOrder)
+    : 0;
+  const isActive = parseBoolean(payload.isActive, true);
+
+  if (requireName && !name) {
+    throw new Error("Team member name is required");
+  }
+  if (profileLink && !validator.isURL(profileLink, { require_protocol: true })) {
+    throw new Error("Profile link must be a valid URL with http/https");
+  }
+  if (imageUrl && !validator.isURL(imageUrl, { require_protocol: true })) {
+    throw new Error("Image URL must be a valid URL with http/https");
+  }
+
+  return {
+    name,
+    role,
+    description,
+    profileLink,
+    imageUrl,
+    displayOrder,
+    isActive,
+  };
+};
+
 const defaultMarketingPayload = () => ({
   currentOffer: {
     title: "",
@@ -32,6 +64,7 @@ const defaultMarketingPayload = () => ({
     isActive: true,
   },
   gallery: [],
+  teamMembers: [],
 });
 
 const normalizeMarketingPayload = (doc) => {
@@ -55,6 +88,24 @@ const normalizeMarketingPayload = (doc) => {
           caption: item.caption || "",
           createdAt: item.createdAt || null,
         }))
+      : [],
+    teamMembers: Array.isArray(source.teamMembers)
+      ? source.teamMembers
+          .map((member) => ({
+            _id: member._id,
+            name: member.name || "",
+            role: member.role || "",
+            description: member.description || "",
+            profileLink: member.profileLink || "",
+            imageUrl: member.imageUrl || "",
+            displayOrder: Number.isFinite(Number(member.displayOrder))
+              ? Number(member.displayOrder)
+              : 0,
+            isActive: member.isActive !== false,
+            createdAt: member.createdAt || null,
+            updatedAt: member.updatedAt || null,
+          }))
+          .sort((a, b) => a.displayOrder - b.displayOrder)
       : [],
     updatedAt: source.updatedAt || null,
     updatedBy: source.updatedBy || null,
@@ -234,6 +285,126 @@ export const deleteGalleryItem = async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       message: "Failed to delete gallery item",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+export const addTeamMember = async (req, res) => {
+  try {
+    const content = await getOrCreateMarketingContent();
+    if (content.teamMembers.length >= 40) {
+      return res.status(400).json({ message: "Maximum 40 team members are allowed" });
+    }
+
+    let memberPayload;
+    try {
+      memberPayload = normalizeTeamMemberInput(req.body || {}, { requireName: true });
+    } catch (error) {
+      return res.status(400).json({ message: error.message || "Invalid team member data" });
+    }
+
+    content.teamMembers.push(memberPayload);
+    content.updatedBy = req.userId || null;
+    await content.save();
+
+    return res.status(201).json({
+      message: "Team member added successfully",
+      content: normalizeMarketingPayload(content),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Failed to add team member",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+export const updateTeamMember = async (req, res) => {
+  try {
+    const { memberId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(memberId)) {
+      return res.status(400).json({ message: "Invalid team member id" });
+    }
+
+    const content = await getOrCreateMarketingContent();
+    const member = content.teamMembers.id(memberId);
+    if (!member) {
+      return res.status(404).json({ message: "Team member not found" });
+    }
+
+    const source = req.body || {};
+    if (source.name !== undefined && !String(source.name || "").trim()) {
+      return res.status(400).json({ message: "Team member name is required" });
+    }
+
+    if (source.profileLink !== undefined) {
+      const profileLink = String(source.profileLink || "").trim();
+      if (profileLink && !validator.isURL(profileLink, { require_protocol: true })) {
+        return res.status(400).json({ message: "Profile link must be a valid URL with http/https" });
+      }
+      member.profileLink = profileLink;
+    }
+
+    if (source.imageUrl !== undefined) {
+      const imageUrl = String(source.imageUrl || "").trim();
+      if (imageUrl && !validator.isURL(imageUrl, { require_protocol: true })) {
+        return res.status(400).json({ message: "Image URL must be a valid URL with http/https" });
+      }
+      member.imageUrl = imageUrl;
+    }
+
+    if (source.name !== undefined) member.name = String(source.name || "").trim();
+    if (source.role !== undefined) member.role = String(source.role || "").trim();
+    if (source.description !== undefined) member.description = String(source.description || "").trim();
+    if (source.displayOrder !== undefined) {
+      member.displayOrder = Number.isFinite(Number(source.displayOrder))
+        ? Number(source.displayOrder)
+        : 0;
+    }
+    if (source.isActive !== undefined) {
+      member.isActive = parseBoolean(source.isActive, true);
+    }
+
+    content.updatedBy = req.userId || null;
+    await content.save();
+
+    return res.status(200).json({
+      message: "Team member updated successfully",
+      content: normalizeMarketingPayload(content),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Failed to update team member",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+export const deleteTeamMember = async (req, res) => {
+  try {
+    const { memberId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(memberId)) {
+      return res.status(400).json({ message: "Invalid team member id" });
+    }
+
+    const content = await getOrCreateMarketingContent();
+    const member = content.teamMembers.id(memberId);
+    if (!member) {
+      return res.status(404).json({ message: "Team member not found" });
+    }
+
+    member.deleteOne();
+    content.updatedBy = req.userId || null;
+    await content.save();
+
+    return res.status(200).json({
+      message: "Team member removed successfully",
+      content: normalizeMarketingPayload(content),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Failed to delete team member",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }

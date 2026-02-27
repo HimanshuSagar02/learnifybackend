@@ -21,6 +21,19 @@ const galleryItemSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+const teamMemberSchema = new mongoose.Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    role: { type: String, default: "", trim: true },
+    description: { type: String, default: "", trim: true },
+    profileLink: { type: String, default: "", trim: true },
+    imageUrl: { type: String, default: "", trim: true },
+    displayOrder: { type: Number, default: 0 },
+    isActive: { type: Boolean, default: true },
+  },
+  { timestamps: true }
+);
+
 const marketingContentSchema = new mongoose.Schema(
   {
     key: {
@@ -44,6 +57,10 @@ const marketingContentSchema = new mongoose.Schema(
     },
     gallery: {
       type: [galleryItemSchema],
+      default: [],
+    },
+    teamMembers: {
+      type: [teamMemberSchema],
       default: [],
     },
     updatedBy: {

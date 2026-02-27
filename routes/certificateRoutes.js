@@ -1,6 +1,9 @@
 import express from "express";
 import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import Certificate from "../models/certificateModel.js";
 import User from "../models/userModel.js";
 import Course from "../models/courseModel.js";
@@ -10,6 +13,46 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const router = express.Router();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+let cachedCertificateLogoBuffer = null;
+let didTryCertificateLogoLoad = false;
+
+const resolveCertificateLogoPath = () => {
+  const configuredPath = String(process.env.CERT_LOGO_PATH || "").trim();
+  const candidates = [
+    configuredPath
+      ? path.isAbsolute(configuredPath)
+        ? configuredPath
+        : path.resolve(process.cwd(), configuredPath)
+      : "",
+    path.resolve(__dirname, "../../frontend/src/assets/logo.jpg"),
+    path.resolve(process.cwd(), "frontend/src/assets/logo.jpg"),
+  ].filter(Boolean);
+
+  return candidates.find((candidatePath) => fs.existsSync(candidatePath)) || null;
+};
+
+const getCertificateLogoBuffer = async () => {
+  if (didTryCertificateLogoLoad) {
+    return cachedCertificateLogoBuffer;
+  }
+
+  didTryCertificateLogoLoad = true;
+  const logoPath = resolveCertificateLogoPath();
+  if (!logoPath) {
+    return null;
+  }
+
+  try {
+    cachedCertificateLogoBuffer = await fs.promises.readFile(logoPath);
+    return cachedCertificateLogoBuffer;
+  } catch (error) {
+    console.warn("[Certificate] Unable to read logo file:", error?.message || error);
+    return null;
+  }
+};
 
 const toPdfSafeText = (value, fallback = "") => {
   const normalized = String(value ?? "")
@@ -66,187 +109,189 @@ const buildStructuredCertificatePdf = async ({
   verifyUrl,
   creatorName,
   qrBuffer,
+  logoBuffer,
 }) =>
   createPdfBuffer((doc) => {
     const pageWidth = doc.page.width;
     const pageHeight = doc.page.height;
     const colors = {
-      primary: "#3B82F6",
-      dark: "#0F172A",
-      text: "#111827",
+      primary: "#2D4FA3",
+      dark: "#1E293B",
+      text: "#1F2937",
       muted: "#475569",
-      light: "#EFF6FF",
-      border: "#BFDBFE",
+      border: "#2D4FA3",
     };
 
-    const frameX = 20;
-    const frameY = 20;
-    const frameW = pageWidth - 40;
-    const frameH = pageHeight - 40;
+    const drawCornerAccent = (x, y, horizontalDirection, verticalDirection) => {
+      const arm = 22;
+      doc.moveTo(x, y + verticalDirection * arm)
+        .lineTo(x, y)
+        .lineTo(x + horizontalDirection * arm, y)
+        .lineWidth(4)
+        .strokeColor(colors.border)
+        .stroke();
+    };
 
     doc.rect(0, 0, pageWidth, pageHeight).fill("#FFFFFF");
-    doc.roundedRect(frameX, frameY, frameW, frameH, 10).lineWidth(1.8).stroke(colors.dark);
-    doc.roundedRect(frameX + 10, frameY + 10, frameW - 20, frameH - 20, 8).lineWidth(0.9).stroke(colors.border);
+    doc.rect(18, 18, pageWidth - 36, pageHeight - 36).lineWidth(1.5).strokeColor(colors.border).stroke();
+    doc.rect(26, 26, pageWidth - 52, pageHeight - 52).lineWidth(0.8).strokeColor(colors.border).stroke();
 
-    const headerX = frameX + 10;
-    const headerY = frameY + 10;
-    const headerW = frameW - 20;
-    const headerH = 84;
-    doc.roundedRect(headerX, headerY, headerW, headerH, 8).fill(colors.dark);
+    drawCornerAccent(24, 24, 1, 1);
+    drawCornerAccent(pageWidth - 24, 24, -1, 1);
+    drawCornerAccent(24, pageHeight - 24, 1, -1);
+    drawCornerAccent(pageWidth - 24, pageHeight - 24, -1, -1);
 
-    const logoCenterX = headerX + 36;
-    const logoCenterY = headerY + 42;
-    doc.circle(logoCenterX, logoCenterY, 22).fillAndStroke(colors.primary, "#93C5FD");
-    doc.font("Helvetica-Bold").fontSize(20).fillColor("#FFFFFF").text("L", logoCenterX - 6, logoCenterY - 11);
-
-    doc.font("Helvetica-Bold")
-      .fontSize(15)
-      .fillColor("#FFFFFF")
-      .text(organisationName, headerX + 70, headerY + 18, { width: headerW - 270 });
-
-    doc.font("Helvetica")
-      .fontSize(9.5)
-      .fillColor("#BFDBFE")
-      .text(organisationWebsite, headerX + 70, headerY + 40, { width: headerW - 270 });
-
-    doc.font("Helvetica")
-      .fontSize(9.5)
-      .fillColor("#BFDBFE")
-      .text(organisationEmail, headerX + 70, headerY + 54, { width: headerW - 270 });
-
-    doc.font("Helvetica")
-      .fontSize(9.5)
-      .fillColor("#BFDBFE")
-      .text(`Social: ${organisationSocial}`, headerX + 70, headerY + 68, { width: headerW - 270 });
-
-    doc.font("Helvetica-Bold")
-      .fontSize(10)
-      .fillColor("#93C5FD")
-      .text("ONLINE ORGANISATION CERTIFICATE", headerX + headerW - 255, headerY + 22, {
-        width: 235,
-        align: "right",
-      });
-
-    doc.font("Helvetica-Bold")
-      .fontSize(11)
-      .fillColor("#DBEAFE")
-      .text(`Certificate No: ${certificateNumber}`, headerX + headerW - 255, headerY + 44, {
-        width: 235,
-        align: "right",
-      });
-
-    doc.font("Helvetica-Bold")
-      .fontSize(11)
-      .fillColor("#DBEAFE")
-      .text(`Issued: ${issueDateLabel}`, headerX + headerW - 255, headerY + 60, {
-        width: 235,
-        align: "right",
-      });
+    doc.font("Helvetica-Oblique")
+      .fontSize(14)
+      .fillColor(colors.text)
+      .text(`Certificate ID: ${certificateId}`, 52, 64);
 
     doc.font("Helvetica-Bold")
       .fontSize(34)
-      .fillColor(colors.text)
-      .text("Certificate of Completion", 0, 129, { align: "center" });
-
+      .fillColor(colors.primary)
+      .text("learnify", pageWidth - 248, 52, { width: 200, align: "right" });
     doc.font("Helvetica")
-      .fontSize(13)
+      .fontSize(10)
       .fillColor(colors.muted)
-      .text("This is to certify that", 0, 170, { align: "center" });
+      .text("credentials that matter", pageWidth - 248, 84, { width: 200, align: "right" });
+
+    const logoSize = 64;
+    const logoX = pageWidth / 2 - logoSize / 2;
+    const logoY = 48;
+    const drawFallbackLogo = () => {
+      doc.rect(logoX, logoY, logoSize, logoSize).fillAndStroke(colors.dark, colors.primary);
+      doc.font("Helvetica-Bold")
+        .fontSize(30)
+        .fillColor("#FFFFFF")
+        .text("L", logoX + logoSize / 2 - 9, logoY + 16);
+    };
+
+    if (logoBuffer) {
+      doc.roundedRect(logoX - 2, logoY - 2, logoSize + 4, logoSize + 4, 4).fillAndStroke("#FFFFFF", "#CBD5E1");
+      try {
+        doc.image(logoBuffer, logoX, logoY, {
+          fit: [logoSize, logoSize],
+          align: "center",
+          valign: "center",
+        });
+      } catch (error) {
+        console.warn("[Certificate] Logo render fallback:", error?.message || error);
+        drawFallbackLogo();
+      }
+    } else {
+      drawFallbackLogo();
+    }
 
     doc.font("Helvetica-Bold")
-      .fontSize(36)
-      .fillColor(colors.primary)
-      .text(studentName, 70, 197, { align: "center", width: pageWidth - 140 });
-
-    doc.moveTo(pageWidth / 2 - 230, 247)
-      .lineTo(pageWidth / 2 + 230, 247)
-      .lineWidth(1)
-      .strokeColor("#CBD5E1")
-      .stroke();
-
+      .fontSize(38)
+      .fillColor(colors.text)
+      .text(organisationName, 0, 132, { align: "center" });
+    doc.font("Helvetica-Oblique")
+      .fontSize(15)
+      .fillColor(colors.muted)
+      .text(`Supported by online education standards | ${organisationWebsite}`, 0, 176, { align: "center" });
     doc.font("Helvetica")
       .fontSize(12.5)
       .fillColor(colors.muted)
-      .text(
-        `has successfully completed the online program "${courseTitle}" conducted by ${organisationName}.`,
-        100,
-        257,
-        { width: pageWidth - 200, align: "center" }
-      );
+      .text(`Contact: ${organisationEmail} | ${organisationSocial}`, 0, 197, { align: "center" });
 
-    const detailX = 58;
-    const detailY = 314;
-    const detailW = pageWidth - 116;
-    const detailH = 128;
-    const midX = detailX + detailW / 2;
-    doc.roundedRect(detailX, detailY, detailW, detailH, 8).fillAndStroke("#F8FAFC", "#CBD5E1");
-    doc.moveTo(midX, detailY + 10).lineTo(midX, detailY + detailH - 10).lineWidth(0.8).strokeColor("#D1D5DB").stroke();
+    doc.font("Helvetica")
+      .fontSize(50)
+      .fillColor(colors.primary)
+      .text("CERTIFICATE OF COMPLETION", 0, 220, { align: "center" });
 
-    doc.font("Helvetica-Bold").fontSize(10).fillColor("#1E3A8A").text("CERTIFICATE HOLDER DETAILS", detailX + 16, detailY + 14);
-    doc.font("Helvetica").fontSize(10.5).fillColor(colors.text).text(`Full Name: ${studentName}`, detailX + 16, detailY + 34, { width: detailW / 2 - 28 });
-    doc.font("Helvetica").fontSize(10.5).fillColor(colors.text).text(`Registration ID: ${registrationId}`, detailX + 16, detailY + 52, { width: detailW / 2 - 28 });
-    doc.font("Helvetica").fontSize(10.5).fillColor(colors.text).text(`Email: ${studentEmail || "Not provided"}`, detailX + 16, detailY + 70, { width: detailW / 2 - 28 });
-    doc.font("Helvetica").fontSize(10.5).fillColor(colors.text).text(`Certificate ID: ${certificateId}`, detailX + 16, detailY + 88, { width: detailW / 2 - 28 });
+    doc.font("Helvetica")
+      .fontSize(20)
+      .fillColor(colors.text)
+      .text("This is to certify that Mr./Ms.", 0, 280, { align: "center" });
+    doc.font("Helvetica-Bold")
+      .fontSize(48)
+      .fillColor("#111827")
+      .text(studentName, 65, 310, { align: "center", width: pageWidth - 130 });
 
-    doc.font("Helvetica-Bold").fontSize(10).fillColor("#1E3A8A").text("PROGRAM DETAILS", midX + 16, detailY + 14);
-    doc.font("Helvetica").fontSize(10.5).fillColor(colors.text).text(`Course: ${courseTitle}`, midX + 16, detailY + 34, { width: detailW / 2 - 30 });
-    doc.font("Helvetica").fontSize(10.5).fillColor(colors.text).text(`Mode: ${courseMode}`, midX + 16, detailY + 52, { width: detailW / 2 - 30 });
-    doc.font("Helvetica").fontSize(10.5).fillColor(colors.text).text(`Total Hours: ${totalHoursLabel}`, midX + 16, detailY + 70, { width: detailW / 2 - 30 });
-    doc.font("Helvetica").fontSize(10.5).fillColor(colors.text).text(`Program Director: ${creatorName}`, midX + 16, detailY + 88, { width: detailW / 2 - 30 });
+    doc.font("Helvetica")
+      .fontSize(18)
+      .fillColor(colors.text)
+      .text("has successfully completed the online", 0, 365, { align: "center" });
+    doc.font("Helvetica-Bold")
+      .fontSize(35)
+      .fillColor("#1E3A8A")
+      .text(`"${courseTitle}"`, 85, 389, { align: "center", width: pageWidth - 170 });
 
-    const verifyX = 58;
-    const verifyY = 456;
-    const verifyW = pageWidth - 330;
-    const verifyH = 95;
-    doc.roundedRect(verifyX, verifyY, verifyW, verifyH, 8).fillAndStroke(colors.light, "#BFDBFE");
-    doc.font("Helvetica-Bold").fontSize(10).fillColor("#1E3A8A").text("VERIFICATION DETAILS", verifyX + 14, verifyY + 12);
-    doc.font("Helvetica").fontSize(10.5).fillColor(colors.text).text(`Certificate Number: ${certificateNumber}`, verifyX + 14, verifyY + 30);
-    doc.font("Helvetica").fontSize(10.5).fillColor(colors.text).text(`Certificate ID: ${certificateId}`, verifyX + 14, verifyY + 46);
-    doc.font("Helvetica").fontSize(10.5).fillColor(colors.text).text(`Verify: ${verifyUrl}`, verifyX + 14, verifyY + 62, {
-      width: verifyW - 24,
-    });
+    doc.font("Helvetica")
+      .fontSize(14.5)
+      .fillColor(colors.muted)
+      .text(`Mode: ${courseMode} | Total Hours: ${totalHoursLabel}`, 0, 437, { align: "center" });
 
-    const sealX = verifyX + verifyW - 78;
-    const sealY = verifyY + 48;
-    doc.circle(sealX, sealY, 30).fillAndStroke("#DBEAFE", "#3B82F6");
-    doc.font("Helvetica-Bold").fontSize(7.5).fillColor("#1E3A8A").text("DIGITAL", sealX - 16, sealY - 12, { width: 32, align: "center" });
-    doc.font("Helvetica-Bold").fontSize(7.5).fillColor("#1E3A8A").text("SEAL", sealX - 16, sealY - 2, { width: 32, align: "center" });
-    doc.font("Helvetica-Bold").fontSize(6.5).fillColor("#1E3A8A").text("VERIFIED", sealX - 16, sealY + 8, { width: 32, align: "center" });
+    doc.font("Helvetica")
+      .fontSize(10.5)
+      .fillColor(colors.text)
+      .text(`Registration ID: ${registrationId}`, 58, 458)
+      .text(`Email: ${studentEmail || "Not provided"}`, 58, 474)
+      .text(`Program Director: ${creatorName}`, 58, 490);
 
-    const qrX = pageWidth - 248;
-    const qrY = 451;
+    doc.font("Helvetica")
+      .fontSize(10.5)
+      .fillColor(colors.text)
+      .text(`Certificate Number: ${certificateNumber}`, 315, 458)
+      .text(`Issued On: ${issueDateLabel}`, 315, 474)
+      .text(`Verify at: ${verifyUrl}`, 315, 490, { width: 255 });
+
+    const qrX = pageWidth - 150;
+    const qrY = 448;
+    const qrSize = 86;
     if (qrBuffer) {
-      doc.roundedRect(qrX, qrY, 108, 108, 10).fillAndStroke("#FFFFFF", "#CBD5E1");
-      doc.image(qrBuffer, qrX + 8, qrY + 8, { width: 92, height: 92 });
+      doc.roundedRect(qrX - 5, qrY - 5, qrSize + 10, qrSize + 10, 8).fillAndStroke("#FFFFFF", "#CBD5E1");
+      doc.image(qrBuffer, qrX, qrY, { width: qrSize, height: qrSize });
       doc.font("Helvetica-Bold")
-        .fontSize(9)
+        .fontSize(8.8)
         .fillColor(colors.dark)
-        .text("SCAN TO VERIFY", qrX, qrY + 112, { width: 108, align: "center" });
+        .text("SCAN TO VERIFY", qrX - 3, qrY + qrSize + 5, { width: qrSize + 6, align: "center" });
     }
 
-    const signBaseY = 501;
-    const sign1X = pageWidth - 132;
-    const sign2X = pageWidth - 242;
-
-    doc.moveTo(sign2X, signBaseY).lineTo(sign2X + 94, signBaseY).lineWidth(0.8).strokeColor("#94A3B8").stroke();
-    doc.moveTo(sign1X, signBaseY).lineTo(sign1X + 94, signBaseY).lineWidth(0.8).strokeColor("#94A3B8").stroke();
-
-    doc.font("Times-Italic").fontSize(16).fillColor(colors.dark).text("Nitin", sign2X, signBaseY - 24, { width: 94, align: "center" });
-    doc.font("Times-Italic").fontSize(16).fillColor(colors.dark).text("Himanshu Sagar", sign1X, signBaseY - 24, { width: 94, align: "center" });
-
-    doc.font("Helvetica")
-      .fontSize(7.8)
-      .fillColor(colors.muted)
-      .text("Administrator", sign2X, signBaseY + 4, { width: 94, align: "center" });
-    doc.font("Helvetica")
-      .fontSize(7.8)
-      .fillColor(colors.muted)
-      .text("Administrator", sign1X, signBaseY + 4, { width: 94, align: "center" });
-
+    const sealX = qrX - 52;
+    const sealY = 490;
+    doc.circle(sealX, sealY, 28).fillAndStroke("#DBEAFE", colors.primary);
     doc.font("Helvetica-Bold")
-      .fontSize(8.2)
+      .fontSize(7.2)
       .fillColor(colors.primary)
-      .text(organisationName, sign2X - 8, signBaseY + 15, { width: 210, align: "center" });
+      .text("DIGITAL", sealX - 15, sealY - 11, { width: 30, align: "center" })
+      .text("SEAL", sealX - 15, sealY - 1, { width: 30, align: "center" })
+      .text("VERIFIED", sealX - 15, sealY + 9, { width: 30, align: "center" });
+
+    const leftSignX = 95;
+    const rightSignX = pageWidth - 300;
+    const signY = 510;
+    const signW = 190;
+    doc.moveTo(leftSignX, signY).lineTo(leftSignX + signW, signY).lineWidth(1).strokeColor("#94A3B8").stroke();
+    doc.moveTo(rightSignX, signY).lineTo(rightSignX + signW, signY).lineWidth(1).strokeColor("#94A3B8").stroke();
+
+    doc.font("Times-Italic")
+      .fontSize(24)
+      .fillColor(colors.text)
+      .text("Nitin", leftSignX, signY - 28, { width: signW, align: "center" });
+    doc.font("Times-Italic")
+      .fontSize(24)
+      .fillColor(colors.text)
+      .text("Himanshu Sagar", rightSignX, signY - 28, { width: signW, align: "center" });
+
+    doc.font("Helvetica")
+      .fontSize(9.2)
+      .fillColor(colors.muted)
+      .text("Administrator", leftSignX, signY + 5, { width: signW, align: "center" })
+      .text(organisationName, leftSignX, signY + 17, { width: signW, align: "center" })
+      .text("Administrator", rightSignX, signY + 5, { width: signW, align: "center" })
+      .text(organisationName, rightSignX, signY + 17, { width: signW, align: "center" });
+
+    doc.font("Helvetica-Oblique")
+      .fontSize(11)
+      .fillColor(colors.muted)
+      .text(
+        "This is an online certification issued through Learnify secure verification system.",
+        0,
+        pageHeight - 34,
+        { align: "center" }
+      );
   });
 
 const buildFallbackCertificatePdf = async ({
@@ -504,6 +549,7 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
       : "As per curriculum";
     const issueDateLabel = formatDateLabel(certificate.issuedOn);
     const studentEmail = toPdfSafeText(user.email);
+    const logoBuffer = await getCertificateLogoBuffer();
 
     const pdfBuffer = await buildStructuredCertificatePdf({
       organisationName,
@@ -522,6 +568,7 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
       verifyUrl,
       creatorName: creatorDisplayName,
       qrBuffer,
+      logoBuffer,
     });
 
     res.setHeader("Content-Type", "application/pdf");

@@ -421,10 +421,14 @@ export const sendOtp = async (req,res) => {
         console.log(`[SendOTP] OTP saved for user: ${user.email}, OTP: ${otp}`);
         
         // Check email configuration BEFORE attempting to send
-        if (!process.env.EMAIL || !process.env.EMAIL_PASS) {
+        const hasEmailConfig = Boolean(
+            String(process.env.EMAIL || "").trim() &&
+            String(process.env.EMAIL_PASS || "").trim()
+        );
+        if (!hasEmailConfig) {
             console.error("[SendOTP] Email configuration missing - EMAIL or EMAIL_PASS not set");
-            console.error("[SendOTP] EMAIL:", process.env.EMAIL ? "Set" : "Missing");
-            console.error("[SendOTP] EMAIL_PASS:", process.env.EMAIL_PASS ? "Set" : "Missing");
+            console.error("[SendOTP] EMAIL:", String(process.env.EMAIL || "").trim() ? "Set" : "Missing");
+            console.error("[SendOTP] EMAIL_PASS:", String(process.env.EMAIL_PASS || "").trim() ? "Set" : "Missing");
             
             // In development mode, return OTP in response so user can test
             const isDevelopment = !process.env.NODE_ENV || process.env.NODE_ENV === 'development';
