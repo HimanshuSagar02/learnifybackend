@@ -21,6 +21,113 @@ const toPdfSafeText = (value, fallback = "") => {
   return normalized || fallback;
 };
 
+const createPdfBuffer = (render) =>
+  new Promise((resolve, reject) => {
+    const doc = new PDFDocument({
+      layout: "landscape",
+      size: "A4",
+      margin: 20,
+    });
+
+    const chunks = [];
+    doc.on("data", (chunk) => chunks.push(chunk));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    try {
+      render(doc);
+      doc.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+
+const buildFallbackCertificatePdf = async ({
+  studentName,
+  courseTitle,
+  certificateId,
+  issuedOn,
+  verifyUrl,
+}) =>
+  createPdfBuffer((doc) => {
+    const pageWidth = doc.page.width;
+    const pageHeight = doc.page.height;
+    const issueDate = new Date(issuedOn || Date.now()).toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+
+    doc.rect(0, 0, pageWidth, pageHeight).fill("#FFFFFF");
+    doc.rect(18, 18, pageWidth - 36, pageHeight - 36).lineWidth(2).stroke("#0F172A");
+    doc.rect(30, 30, pageWidth - 60, 64).fill("#0F172A");
+
+    doc.font("Helvetica-Bold")
+      .fontSize(28)
+      .fillColor("#FFFFFF")
+      .text("CERTIFICATE OF COMPLETION", 0, 48, { align: "center" });
+
+    doc.font("Helvetica")
+      .fontSize(14)
+      .fillColor("#475569")
+      .text("This certifies that", 0, 160, { align: "center" });
+
+    doc.font("Helvetica-Bold")
+      .fontSize(36)
+      .fillColor("#111827")
+      .text(studentName, 0, 195, { align: "center" });
+
+    doc.font("Helvetica")
+      .fontSize(15)
+      .fillColor("#475569")
+      .text("has successfully completed the course", 0, 250, { align: "center" });
+
+    doc.font("Helvetica-Bold")
+      .fontSize(25)
+      .fillColor("#3B82F6")
+      .text(courseTitle, 90, 282, { align: "center", width: pageWidth - 180 });
+
+    doc.font("Helvetica-Bold")
+      .fontSize(11)
+      .fillColor("#1E3A8A")
+      .text(`Certificate ID: ${certificateId}`, 70, pageHeight - 95);
+
+    doc.font("Helvetica-Bold")
+      .fontSize(11)
+      .fillColor("#1E3A8A")
+      .text(`Issued On: ${issueDate}`, 70, pageHeight - 75);
+
+    doc.font("Helvetica")
+      .fontSize(9)
+      .fillColor("#64748B")
+      .text(`Verification URL: ${verifyUrl}`, 60, pageHeight - 42, {
+        width: pageWidth - 120,
+        align: "center",
+      });
+
+    doc.moveTo(pageWidth - 300, pageHeight - 120)
+      .lineTo(pageWidth - 90, pageHeight - 120)
+      .lineWidth(1)
+      .strokeColor("#94A3B8")
+      .stroke();
+
+    doc.font("Times-Italic")
+      .fontSize(25)
+      .fillColor("#0F172A")
+      .text("Himanshu Sagar", pageWidth - 305, pageHeight - 154, {
+        width: 220,
+        align: "center",
+      });
+
+    doc.font("Helvetica")
+      .fontSize(10)
+      .fillColor("#475569")
+      .text("Authorized Signatory", pageWidth - 305, pageHeight - 108, {
+        width: 220,
+        align: "center",
+      });
+  });
+
 // Get frontend URL from environment variable
 // In production, FRONTEND_URL should be set (e.g., https://yourdomain.com)
 // In development, it can fallback to localhost
@@ -48,6 +155,7 @@ const getFrontendUrl = () => {
     GENERATE CERTIFICATE PDF (Authenticated)
 =====================================================*/
 router.get("/generate/:courseId", isAuth, async (req, res) => {
+  let fallbackPayload = null;
   try {
     const { courseId } = req.params;
     const userId = req.userId;
@@ -85,8 +193,21 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
 
     if (!certificate) {
       // Create new certificate (certificateId will be auto-generated)
-      certificate = await Certificate.create({ userId, courseId });
-      console.log(`[Certificate] Created new certificate with ID: ${certificate.certificateId}`);
+      try {
+        certificate = await Certificate.create({ userId, courseId });
+        console.log(`[Certificate] Created new certificate with ID: ${certificate.certificateId}`);
+      } catch (createError) {
+        // Handle rare race conditions where duplicate certificate is created concurrently.
+        if (createError?.code === 11000) {
+          certificate = await Certificate.findOne({ userId, courseId, isActive: true });
+          if (!certificate) {
+            throw createError;
+          }
+          console.warn("[Certificate] Duplicate create avoided by reusing existing certificate");
+        } else {
+          throw createError;
+        }
+      }
     } else {
       console.log(`[Certificate] Using existing certificate with ID: ${certificate.certificateId}`);
     }
@@ -156,6 +277,16 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
       .replace(/[^a-zA-Z0-9._-]+/g, "-")
       .replace(/-+/g, "-")
       .replace(/^-|-$/g, "") || "course";
+
+    fallbackPayload = {
+      studentName: studentDisplayName,
+      courseTitle: courseDisplayTitle,
+      certificateId: certificate.certificateId,
+      issuedOn: certificate.issuedOn,
+      verifyUrl,
+      safeStudentName,
+      safeCourseName,
+    };
 
     const pageWidth = doc.page.width;
     const pageHeight = doc.page.height;
@@ -345,6 +476,28 @@ router.get("/generate/:courseId", isAuth, async (req, res) => {
 
   } catch (err) {
     console.error("[Certificate] Generate error:", err);
+
+    if (!res.headersSent && fallbackPayload) {
+      try {
+        const fallbackPdfBuffer = await buildFallbackCertificatePdf({
+          studentName: fallbackPayload.studentName,
+          courseTitle: fallbackPayload.courseTitle,
+          certificateId: fallbackPayload.certificateId,
+          issuedOn: fallbackPayload.issuedOn,
+          verifyUrl: fallbackPayload.verifyUrl,
+        });
+
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="${fallbackPayload.safeStudentName}-${fallbackPayload.safeCourseName}-certificate.pdf"`
+        );
+        return res.status(200).send(fallbackPdfBuffer);
+      } catch (fallbackError) {
+        console.error("[Certificate] Fallback PDF generation failed:", fallbackError);
+      }
+    }
+
     if (!res.headersSent) {
       return res.status(500).json({
         message: "Failed to generate certificate",
